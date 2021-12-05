@@ -1,8 +1,0 @@
-﻿  Validating sources
-  Copying sources remotely to '192.168.0.1'
-  Validating architecture
-  Validating architecture
-  Starting remote build
-  Compiling sources:
-  Linking objects
-  motionCtrlTeleopNode.vcxproj -> C:\work\sw_projects\motionCtrlTeleopNode\motionCtrlTeleopNode\bin\ARM64\Release\motionCtrlTeleopNode.out
