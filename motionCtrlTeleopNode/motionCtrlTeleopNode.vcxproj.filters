@@ -1,0 +1,30 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="src">
+      <UniqueIdentifier>{5c96c24b-7cc9-4fdd-9fa2-b9d2372adcb5}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="sdk">
+      <UniqueIdentifier>{d0a78b64-a677-4103-8b8c-dfdd5f5fdabc}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="sdk\include">
+      <UniqueIdentifier>{025d05a7-b6db-47f4-bbe0-4c4ee66ac703}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="sdk\src">
+      <UniqueIdentifier>{baf2670d-3c80-4163-879c-2a31a0c4103c}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="sdk\src\CUtility.cpp">
+      <Filter>sdk\src</Filter>
+    </ClCompile>
+    <ClCompile Include="src\motion_ctrl_teleop_node.cpp">
+      <Filter>src</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="sdk\include\CUtility.h">
+      <Filter>sdk\include</Filter>
+    </ClInclude>
+  </ItemGroup>
+</Project>
