@@ -45,3 +45,7 @@ Browse.VC.db-wal
 Browse.VC.opendb
 *.Build.CppClean.log
 *.FileListAbsolute.txt
+
+# Directories
+bin
+obj
