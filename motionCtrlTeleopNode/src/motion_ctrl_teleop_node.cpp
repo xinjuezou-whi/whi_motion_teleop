@@ -24,10 +24,11 @@ Changelog:
 #include <geometry_msgs/Twist.h>
 #include <whi_interfaces/WhiEng.h>
 #include <string>
+#include <thread>
 #include "../sdk/include/CUtility.h"
 using namespace std;
 
-static const char* VERSION = "01.08";
+static const char* VERSION = "01.09";
 static double linearMin = 0.01;
 static double linearMax = 2.5;
 static double angularMin = 0.1;
@@ -35,6 +36,8 @@ static double angularMax = 1.6;
 static double stepLinear = 0.01;
 static double stepAngular = 0.1;
 static bool calInitiated = false;
+static bool terminating = false;
+static std::shared_ptr<std::thread> thHandler = nullptr;
 
 void readConfig(const char* FileName)
 {
@@ -64,11 +67,21 @@ void readConfig(const char* FileName)
 	}
 }
 
+void callbackFresher(std::shared_ptr<ros::Publisher> Pub, const geometry_msgs::Twist& Msg)
+{
+	while (!terminating)
+	{
+		Pub->publish(Msg);
+
+		std::this_thread::sleep_for(std::chrono::milliseconds(200));
+	}
+}
+
 int main(int argc, char** argv)
 {
 	ros::init(argc, argv, "dr_motion_ctrl_teleop");
 
-	ros::NodeHandle n;
+	ros::NodeHandle node;
 
 	ros::NodeHandle private_nh("~");
 	string configFile;
@@ -106,14 +119,16 @@ int main(int argc, char** argv)
 	printf("\n");
 	printf("linear %.2f, angular %.2f\n", targetLinearVel, targetAngularVel);
 
-	ros::Publisher publisherCmd_ = n.advertise<geometry_msgs::Twist>("cmd_vel", 50);
-	ros::Publisher publisherEng_ = n.advertise<whi_interfaces::WhiEng>("eng", 50);
+	std::shared_ptr<ros::Publisher> publisherCmd_ = std::make_shared<ros::Publisher>(node.advertise<geometry_msgs::Twist>("cmd_vel", 50));
+	std::shared_ptr<ros::Publisher> publisherEng_ = std::make_shared<ros::Publisher>(node.advertise<whi_interfaces::WhiEng>("eng", 50));
 	geometry_msgs::Twist messageCmd;
 	whi_interfaces::WhiEng messageEng;
+
+	// spawn a thread to fresh publication
+	thHandler = std::make_shared<std::thread>(std::bind(&callbackFresher, publisherCmd_, std::ref(messageCmd)));
 	
-	bool isQuit = false;
 	ros::Rate loop_rate(10.0);
-	while (!isQuit && n.ok())
+	while (!terminating && node.ok())
 	{
 		switch (getchar())
 		{
@@ -121,9 +136,9 @@ int main(int argc, char** argv)
 			printf("quitting...\n");
 			messageCmd.linear.x = 0.0;
 			messageCmd.angular.z = 0.0;
-			publisherCmd_.publish(messageCmd);
+			publisherCmd_->publish(messageCmd);
 
-			isQuit = true;
+			terminating = true;
 			break;
 		case 32: // s
 		case 115: // space
@@ -137,7 +152,7 @@ int main(int argc, char** argv)
 			{
 				messageCmd.linear.x = 0.0;
 				messageCmd.angular.z = 0.0;
-				publisherCmd_.publish(messageCmd);
+				publisherCmd_->publish(messageCmd);
 
 				printf("[cmd] linear %.2f, angular %.2f\n", messageCmd.linear.x, messageCmd.angular.z);
 			}
@@ -163,7 +178,7 @@ int main(int argc, char** argv)
 						messageCmd.angular.z = angularMax;
 					}
 				}
-				publisherCmd_.publish(messageCmd);
+				publisherCmd_->publish(messageCmd);
 
 				printf("[cmd] linear %.2f, angular %.2f\n", messageCmd.linear.x, messageCmd.angular.z);
 			}
@@ -189,7 +204,7 @@ int main(int argc, char** argv)
 						messageCmd.angular.z = -angularMax;
 					}
 				}
-				publisherCmd_.publish(messageCmd);
+				publisherCmd_->publish(messageCmd);
 
 				printf("[cmd] linear %.2f, angular %.2f\n", messageCmd.linear.x, messageCmd.angular.z);
 			}
@@ -215,7 +230,7 @@ int main(int argc, char** argv)
 						messageCmd.linear.x = linearMax;
 					}
 				}
-				publisherCmd_.publish(messageCmd);
+				publisherCmd_->publish(messageCmd);
 
 				printf("[cmd] linear %.2f, angular %.2f\n", messageCmd.linear.x, messageCmd.angular.z);
 			}
@@ -241,7 +256,7 @@ int main(int argc, char** argv)
 						messageCmd.linear.x = -linearMax;
 					}
 				}
-				publisherCmd_.publish(messageCmd);
+				
 
 				printf("[cmd] linear %.2f, angular %.2f\n", messageCmd.linear.x, messageCmd.angular.z);
 			}
@@ -249,7 +264,7 @@ int main(int argc, char** argv)
 		case 48: // 0
 			messageEng.eng_flag = 0;
 			calInitiated = false;
-			publisherEng_.publish(messageEng);
+			publisherEng_->publish(messageEng);
 
 			printf("[engineering] eng all neutralized\n");
 			break;
@@ -262,7 +277,7 @@ int main(int argc, char** argv)
 			else
 			{
 				messageEng.eng_flag |= 0b00000001;
-				publisherEng_.publish(messageEng);
+				publisherEng_->publish(messageEng);
 				messageEng.eng_flag &= ~0b00000001;
 
 				printf("[engineering] one revolution left\n");
@@ -277,7 +292,7 @@ int main(int argc, char** argv)
 			else
 			{
 				messageEng.eng_flag |= 0b00000010;
-				publisherEng_.publish(messageEng);
+				publisherEng_->publish(messageEng);
 				messageEng.eng_flag &= ~0b00000010;
 
 				printf("[engineering] one revolution right\n");
@@ -301,7 +316,7 @@ int main(int argc, char** argv)
 					printf("[engineering] printf imu\n");
 					messageEng.eng_flag |= 0b00000100;
 				}
-				publisherEng_.publish(messageEng);
+				publisherEng_->publish(messageEng);
 			}
 			break;
 		case 52: // 4: reset imu
@@ -313,7 +328,7 @@ int main(int argc, char** argv)
 			else
 			{
 				messageEng.eng_flag |= 0b00001000;
-				publisherEng_.publish(messageEng);
+				publisherEng_->publish(messageEng);
 				messageEng.eng_flag &= ~0b00001000;
 
 				printf("[engineering] reset imu\n");
@@ -337,7 +352,7 @@ int main(int argc, char** argv)
 					printf("[engineering] print incoder\n");
 					messageEng.eng_flag |= 0b00010000;
 				}
-				publisherEng_.publish(messageEng);
+				publisherEng_->publish(messageEng);
 			}
 			break;
 		case 54: // 6: reset enc
@@ -349,7 +364,7 @@ int main(int argc, char** argv)
 			else
 			{
 				messageEng.eng_flag |= 0b00100000;
-				publisherEng_.publish(messageEng);
+				publisherEng_->publish(messageEng);
 				messageEng.eng_flag &= ~0b00100000;
 
 				printf("[engineering] reset encoder\n");
@@ -364,7 +379,7 @@ int main(int argc, char** argv)
 			else
 			{
 				messageEng.eng_flag |= 0b01000000;
-				publisherEng_.publish(messageEng);
+				publisherEng_->publish(messageEng);
 				messageEng.eng_flag &= ~0b01000000;
 
 				printf("[engineering] build lookup\n");
@@ -379,7 +394,7 @@ int main(int argc, char** argv)
 			else
 			{
 				messageEng.eng_flag |= 0b10000000;
-				publisherEng_.publish(messageEng);
+				publisherEng_->publish(messageEng);
 				messageEng.eng_flag &= ~0b10000000;
 
 				printf("[engineering] clear built lookup\n");
@@ -395,7 +410,7 @@ int main(int argc, char** argv)
 			if (calInitiated)
 			{
 				messageEng.eng_flag |= 0b10100000000;
-				publisherEng_.publish(messageEng);
+				publisherEng_->publish(messageEng);
 				messageEng.eng_flag &= ~0b10100000000;
 
 				calInitiated = false;
@@ -407,7 +422,7 @@ int main(int argc, char** argv)
 			if (calInitiated)
 			{
 				messageEng.eng_flag |= 0b01100000000;
-				publisherEng_.publish(messageEng);
+				publisherEng_->publish(messageEng);
 				messageEng.eng_flag &= ~0b01100000000;
 
 				calInitiated = false;
@@ -441,6 +456,8 @@ int main(int argc, char** argv)
 
 	/* restore the former settings */
 	tcsetattr(STDIN_FILENO, TCSANOW, &old_tio);
+
+	thHandler->join();
 
 	return 0;
 }

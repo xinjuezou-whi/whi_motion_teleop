@@ -94,7 +94,7 @@
       <AdditionalIncludeDirectories>c:\work\sw_projects\ROS\interfaces;c:\work\sw_projects\ROS;c:\work\sw_projects\RaspberryInclude\include;c:\work\swo_projects\ROS\melodic;c:\work\swo_projects\ROS\kinetic;/usr/include/;/opt/ros/melodic/include/;/opt/ros/kinetic/include/;/home/dr/catkin_workspace/devel/include/;/home/ubuntu/catkin_workspace/devel/include/;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
-      <LibraryDependencies>roscpp;rosconsole;rostime;roscpp_serialization;xmlrpcpp;cpp_common;rosconsole_log4cxx;rosconsole_backend_interface</LibraryDependencies>
+      <LibraryDependencies>roscpp;rosconsole;rostime;roscpp_serialization;xmlrpcpp;cpp_common;rosconsole_log4cxx;rosconsole_backend_interface;pthread</LibraryDependencies>
       <AdditionalOptions>-L /opt/ros/kinetic/lib %(AdditionalOptions)</AdditionalOptions>
       <AdditionalLibraryDirectories>/opt/ros/kinetic/lib/;/opt/ros/melodic/lib/;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
     </Link>
@@ -104,7 +104,7 @@
       <AdditionalIncludeDirectories>c:\work\sw_projects\ROS\interfaces;c:\work\sw_projects\ROS;c:\work\sw_projects\RaspberryInclude\include;c:\work\swo_projects\ROS\noetic;c:\work\swo_projects\ROS\melodic;c:\work\swo_projects\ROS\kinetic;/usr/include/;/opt/ros/noetic/include/;/opt/ros/melodic/include/;/opt/ros/kinetic/include/;/home/whi/catkin_workspace/devel/include/;/home/dr/catkin_workspace/devel/include/;/home/ubuntu/catkin_workspace/devel/include/;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
-      <LibraryDependencies>roscpp;rosconsole;rostime;roscpp_serialization;xmlrpcpp;cpp_common;rosconsole_log4cxx;rosconsole_backend_interface</LibraryDependencies>
+      <LibraryDependencies>roscpp;rosconsole;rostime;roscpp_serialization;xmlrpcpp;cpp_common;rosconsole_log4cxx;rosconsole_backend_interface;pthread</LibraryDependencies>
       <AdditionalOptions>-L /opt/ros/kinetic/lib %(AdditionalOptions)</AdditionalOptions>
       <AdditionalLibraryDirectories>/opt/ros/noetic/lib/;/opt/ros/kinetic/lib/;/opt/ros/melodic/lib/;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
     </Link>
