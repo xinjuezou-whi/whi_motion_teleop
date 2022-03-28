@@ -28,7 +28,7 @@ Changelog:
 #include "../sdk/include/CUtility.h"
 using namespace std;
 
-static const char* VERSION = "01.09";
+static const char* VERSION = "01.10";
 static double linearMin = 0.01;
 static double linearMax = 2.5;
 static double angularMin = 0.1;
@@ -268,36 +268,6 @@ int main(int argc, char** argv)
 
 			printf("[engineering] eng all neutralized\n");
 			break;
-		case 49: // 1: one revolution left
-			if (calInitiated)
-			{
-				printf("[engineering] please specify direction:\n");
-				printf("[engineering] + counter-clock, - clock\n");
-			}
-			else
-			{
-				messageEng.eng_flag |= 0b00000001;
-				publisherEng_->publish(messageEng);
-				messageEng.eng_flag &= ~0b00000001;
-
-				printf("[engineering] one revolution left\n");
-			}
-			break;
-		case 50: // 2: one revolution right
-			if (calInitiated)
-			{
-				printf("[engineering] please specify direction:\n");
-				printf("[engineering] + counter-clock, - clock\n");
-			}
-			else
-			{
-				messageEng.eng_flag |= 0b00000010;
-				publisherEng_->publish(messageEng);
-				messageEng.eng_flag &= ~0b00000010;
-
-				printf("[engineering] one revolution right\n");
-			}
-			break;
 		case 51: // 3: print imu
 			if (calInitiated)
 			{
@@ -310,10 +280,12 @@ int main(int argc, char** argv)
 				{
 					printf("[engineering] printf imu off\n");
 					messageEng.eng_flag &= ~0b00000100;
+					messageEng.eng_flag |= 0b00000001;
 				}
 				else
 				{
 					printf("[engineering] printf imu\n");
+					messageEng.eng_flag &= ~0b00000001;
 					messageEng.eng_flag |= 0b00000100;
 				}
 				publisherEng_->publish(messageEng);
@@ -346,10 +318,12 @@ int main(int argc, char** argv)
 				{
 					printf("[engineering] print incoder off\n");
 					messageEng.eng_flag &= ~0b00010000;
+					messageEng.eng_flag |= 0b00000010;
 				}
 				else
 				{
 					printf("[engineering] print incoder\n");
+					messageEng.eng_flag &= ~0b00000010;
 					messageEng.eng_flag |= 0b00010000;
 				}
 				publisherEng_->publish(messageEng);

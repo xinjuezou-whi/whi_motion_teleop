@@ -4,6 +4,6 @@
     <RemoteTarget>-1581019843;192.168.10.108 (username=, port=22, authentication=Password)</RemoteTarget>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">
-    <RemoteTarget>-1866847709;192.168.0.1 (username=, port=22, authentication=Password)</RemoteTarget>
+    <RemoteTarget>259930235;192.168.0.5 (username=, port=22, authentication=Password)</RemoteTarget>
   </PropertyGroup>
 </Project>
