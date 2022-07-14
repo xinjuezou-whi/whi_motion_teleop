@@ -28,13 +28,14 @@ Changelog:
 #include "../sdk/include/CUtility.h"
 using namespace std;
 
-static const char* VERSION = "01.10";
+static const char* VERSION = "01.11";
 static double linearMin = 0.01;
 static double linearMax = 2.5;
 static double angularMin = 0.1;
 static double angularMax = 1.6;
 static double stepLinear = 0.01;
 static double stepAngular = 0.1;
+static int cmdRate = 200; // millisecond
 static bool calInitiated = false;
 static bool terminating = false;
 static std::shared_ptr<std::thread> thHandler = nullptr;
@@ -60,6 +61,11 @@ void readConfig(const char* FileName)
 			stepLinear = atof(iter->at(1).c_str());
 			stepAngular = atof(iter->at(2).c_str());
 		}
+		else if (iter->at(0) == "CMD_FREQUENCY")
+		{
+			int frequency = atoi(iter->at(1).c_str());
+			cmdRate = frequency == 0 ? 200 : 1000 / frequency;
+		}
 		else
 		{
 			// do nothing
@@ -73,7 +79,7 @@ void callbackFresher(std::shared_ptr<ros::Publisher> Pub, const geometry_msgs::T
 	{
 		Pub->publish(Msg);
 
-		std::this_thread::sleep_for(std::chrono::milliseconds(200));
+		std::this_thread::sleep_for(std::chrono::milliseconds(cmdRate));
 	}
 }
 
