@@ -1,0 +1,8 @@
+<?xml version="1.0"?>
+<launch>
+
+  <node pkg="whi_motion_ctrl_teleop" type="whi_motion_ctrl_teleop_node" name="whi_motion_ctrl_teleop" output="screen" >
+    <param name="config_file" type="string" value="$(find whi_motion_ctrl_teleop)/config/config.csv" />
+  </node>
+
+</launch>
