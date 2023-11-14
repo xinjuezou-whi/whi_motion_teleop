@@ -411,7 +411,7 @@ int main(int argc, char** argv)
 
 	printf("\n");
 	printf("TELEOP VERSION %s\n", VERSION);
-	printf("Copyright © 2018-2023 Wheel Hub Intelligent Co.,Ltd. All rights reserved\n\n");
+	printf("Copyright © 2018-2024 Wheel Hub Intelligent Co.,Ltd. All rights reserved\n\n");
 	printf("set linear range: %.2f to %.2f, step: %.2f\n", linearMin, linearMax, stepLinear);
 	printf("set angular range: %.2f to %.2f, step: %.2f\n", angularMin, angularMax, stepAngular);
 	printInstruction(0.0, 0.0);
