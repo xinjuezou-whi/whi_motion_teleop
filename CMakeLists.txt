@@ -8,7 +8,7 @@ FILE(GLOB WHI_SDK_SRC
 )
 
 ## Compile as C++11, supported in ROS Kinetic and newer
-add_compile_options(-std=c++11)
+add_compile_options(-std=c++17)
 
 ## Find catkin macros and libraries
 ## if COMPONENTS list like find_package(catkin REQUIRED COMPONENTS xyz)
@@ -109,7 +109,7 @@ find_package(catkin REQUIRED COMPONENTS
 ## DEPENDS: system dependencies of this project that dependent projects also need
 catkin_package(
 #  INCLUDE_DIRS include
-  LIBRARIES whi_motion_ctrl_teleop
+  LIBRARIES ${PROJECT_NAME}
   CATKIN_DEPENDS rosconsole roscpp
 #  DEPENDS system_lib
 )
@@ -121,9 +121,7 @@ catkin_package(
 ## Specify additional locations of header files
 ## Your package locations should be listed before other locations
 include_directories(
-# include
-  ${WHI_SDK_SRC_PATH}/include
-  ${WHI_SDK_SRC_PATH}/src
+  include
   ${catkin_INCLUDE_DIRS}
 )
 
@@ -140,7 +138,7 @@ include_directories(
 ## Declare a C++ executable
 ## With catkin_make all packages are built within a single CMake context
 ## The recommended prefix ensures that target names across packages don't collide
-add_executable(${PROJECT_NAME}_node src/motion_ctrl_teleop_node.cpp ${WHI_SDK_SRC})
+add_executable(${PROJECT_NAME}_node src/motion_ctrl_teleop_node.cpp)
 
 ## Rename C++ executable without prefix
 ## The above recommended prefix causes long target names, the following renames the

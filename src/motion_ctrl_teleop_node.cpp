@@ -8,15 +8,14 @@ Features:
 
 Written by Xinjue Zou, xinjue.zou@outlook.com
 
-GNU General Public License, check LICENSE for more information.
+Apache License Version 2.0, check LICENSE for more information.
 All text above must be included in any redistribution.
 
 Changelog:
-2019-05-10: Initial version
+2018-05-10: Initial version
 2020-10-22: refactoring
 2020-xx-xx: xxx
 ******************************************************************/
-
 #include <stdio.h>
 #include <termios.h>
 #include <ros/ros.h>
@@ -25,10 +24,9 @@ Changelog:
 #include <whi_interfaces/WhiEng.h>
 #include <string>
 #include <thread>
-#include "../sdk/include/CUtility.h"
-using namespace std;
+#include <signal.h>
 
-static const char* VERSION = "01.11";
+static const char* VERSION = "01.12.0";
 static double linearMin = 0.01;
 static double linearMax = 2.5;
 static double angularMin = 0.1;
@@ -37,45 +35,14 @@ static double stepLinear = 0.01;
 static double stepAngular = 0.1;
 static int cmdRate = 200; // millisecond
 static bool calInitiated = false;
-static bool terminating = false;
+static std::atomic_bool terminating = false;
 static std::shared_ptr<std::thread> thHandler = nullptr;
-
-void readConfig(const char* FileName)
-{
-	vector<vector<string>> configs;
-	CUtility::readCsv(FileName, configs);
-	for (vector<vector<string>>::const_iterator iter = configs.begin(); iter != configs.end(); ++iter)
-	{
-		if (iter->at(0) == "LIMITS_LINEAR")
-		{
-			linearMin = atof(iter->at(1).c_str());
-			linearMax = atof(iter->at(2).c_str());
-		}
-		else if (iter->at(0) == "LIMITS_ANGULAR")
-		{
-			angularMin = atof(iter->at(1).c_str());
-			angularMax = atof(iter->at(2).c_str());
-		}
-		else if (iter->at(0) == "STEP")
-		{
-			stepLinear = atof(iter->at(1).c_str());
-			stepAngular = atof(iter->at(2).c_str());
-		}
-		else if (iter->at(0) == "CMD_FREQUENCY")
-		{
-			int frequency = atoi(iter->at(1).c_str());
-			cmdRate = frequency == 0 ? 200 : 1000 / frequency;
-		}
-		else
-		{
-			// do nothing
-		}
-	}
-}
+static std::shared_ptr<ros::Publisher> publisherCmd = nullptr;
+static struct termios oldTio;
 
 void callbackFresher(std::shared_ptr<ros::Publisher> Pub, const geometry_msgs::Twist& Msg)
 {
-	while (!terminating)
+	while (!terminating.load())
 	{
 		Pub->publish(Msg);
 
@@ -83,30 +50,62 @@ void callbackFresher(std::shared_ptr<ros::Publisher> Pub, const geometry_msgs::T
 	}
 }
 
+void sigintHandler(int sig)
+{
+	// Do some custom action.
+	// For example, publish a stop message to some other nodes.
+	std::cout << "quiting......" << std::endl;
+
+	geometry_msgs::Twist messageCmd;
+	messageCmd.linear.x = 0.0;
+	messageCmd.angular.z = 0.0;
+	publisherCmd->publish(messageCmd);
+
+	/* restore the former settings */
+	tcsetattr(STDIN_FILENO, TCSANOW, &oldTio);
+
+	terminating.store(true);
+	thHandler->join();
+ 
+	// All the default sigint handler does is call shutdown()
+	ros::shutdown();
+}
+
 int main(int argc, char** argv)
 {
-	ros::init(argc, argv, "dr_motion_ctrl_teleop");
+	std::string nodeName("whi_motion_ctrl_teleop");
+	ros::init(argc, argv, nodeName);
 
 	ros::NodeHandle node;
 
-	ros::NodeHandle private_nh("~");
-	string configFile;
-	private_nh.param<string>("config_file", configFile, string("<your_workspace>/config/config.csv"));
-	readConfig(configFile.c_str());
+	// Override the default ros sigint handler.
+	// This must be set after the first NodeHandle is created.
+	signal(SIGINT, sigintHandler);
 
-	struct termios old_tio, new_tio;
+	// params
+	double frequency = 1.0;
+	node.param(nodeName + "/command_frequency", frequency, 5.0);
+	cmdRate = int(1000.0 / frequency);
+	node.param(nodeName + "/linear/min", linearMin, 0.01);
+	node.param(nodeName + "/linear/min", linearMax, 2.5);
+	node.param(nodeName + "/linear/step", stepLinear, 0.01);
+	node.param(nodeName + "/angular/min", angularMin, 0.1);
+	node.param(nodeName + "/angular/min", angularMax, 1.6);
+	node.param(nodeName + "/angular/step", stepAngular, 0.1);
+
+	struct termios newTio;
 
 	/* get the terminal settings for stdin */
-	tcgetattr(STDIN_FILENO, &old_tio);
+	tcgetattr(STDIN_FILENO, &oldTio);
 
 	/* we want to keep the old setting to restore them a the end */
-	new_tio = old_tio;
+	newTio = oldTio;
 
 	/* disable canonical mode (buffered i/o) and local echo */
-	new_tio.c_lflag &= (~ICANON & ~ECHO);
+	newTio.c_lflag &= (~ICANON & ~ECHO);
 
 	/* set the new settings immediately */
-	tcsetattr(STDIN_FILENO, TCSANOW, &new_tio);
+	tcsetattr(STDIN_FILENO, TCSANOW, &newTio);
 
 	double targetLinearVel = 0.0;
 	double targetAngularVel = 0.0;
@@ -125,27 +124,20 @@ int main(int argc, char** argv)
 	printf("\n");
 	printf("linear %.2f, angular %.2f\n", targetLinearVel, targetAngularVel);
 
-	std::shared_ptr<ros::Publisher> publisherCmd_ = std::make_shared<ros::Publisher>(node.advertise<geometry_msgs::Twist>("cmd_vel", 50));
-	std::shared_ptr<ros::Publisher> publisherEng_ = std::make_shared<ros::Publisher>(node.advertise<whi_interfaces::WhiEng>("eng", 50));
+	publisherCmd = std::make_shared<ros::Publisher>(node.advertise<geometry_msgs::Twist>("cmd_vel", 50));
+	std::shared_ptr<ros::Publisher> publisherEng =
+		std::make_shared<ros::Publisher>(node.advertise<whi_interfaces::WhiEng>("eng", 50));
 	geometry_msgs::Twist messageCmd;
 	whi_interfaces::WhiEng messageEng;
 
 	// spawn a thread to fresh publication
-	thHandler = std::make_shared<std::thread>(std::bind(&callbackFresher, publisherCmd_, std::ref(messageCmd)));
+	thHandler = std::make_shared<std::thread>(std::bind(&callbackFresher, publisherCmd, std::ref(messageCmd)));
 	
-	ros::Rate loop_rate(10.0);
-	while (!terminating && node.ok())
+	ros::Rate loopRate(10.0);
+	while (node.ok())
 	{
 		switch (getchar())
 		{
-		case 113: // q
-			printf("quitting...\n");
-			messageCmd.linear.x = 0.0;
-			messageCmd.angular.z = 0.0;
-			publisherCmd_->publish(messageCmd);
-
-			terminating = true;
-			break;
 		case 32: // s
 		case 115: // space
 			// stop
@@ -158,7 +150,7 @@ int main(int argc, char** argv)
 			{
 				messageCmd.linear.x = 0.0;
 				messageCmd.angular.z = 0.0;
-				publisherCmd_->publish(messageCmd);
+				publisherCmd->publish(messageCmd);
 
 				printf("[cmd] linear %.2f, angular %.2f\n", messageCmd.linear.x, messageCmd.angular.z);
 			}
@@ -184,7 +176,7 @@ int main(int argc, char** argv)
 						messageCmd.angular.z = angularMax;
 					}
 				}
-				publisherCmd_->publish(messageCmd);
+				publisherCmd->publish(messageCmd);
 
 				printf("[cmd] linear %.2f, angular %.2f\n", messageCmd.linear.x, messageCmd.angular.z);
 			}
@@ -210,7 +202,7 @@ int main(int argc, char** argv)
 						messageCmd.angular.z = -angularMax;
 					}
 				}
-				publisherCmd_->publish(messageCmd);
+				publisherCmd->publish(messageCmd);
 
 				printf("[cmd] linear %.2f, angular %.2f\n", messageCmd.linear.x, messageCmd.angular.z);
 			}
@@ -236,7 +228,7 @@ int main(int argc, char** argv)
 						messageCmd.linear.x = linearMax;
 					}
 				}
-				publisherCmd_->publish(messageCmd);
+				publisherCmd->publish(messageCmd);
 
 				printf("[cmd] linear %.2f, angular %.2f\n", messageCmd.linear.x, messageCmd.angular.z);
 			}
@@ -270,7 +262,7 @@ int main(int argc, char** argv)
 		case 48: // 0
 			messageEng.eng_flag = 0;
 			calInitiated = false;
-			publisherEng_->publish(messageEng);
+			publisherEng->publish(messageEng);
 
 			printf("[engineering] eng all neutralized\n");
 			break;
@@ -294,7 +286,7 @@ int main(int argc, char** argv)
 					messageEng.eng_flag &= ~0b00000001;
 					messageEng.eng_flag |= 0b00000100;
 				}
-				publisherEng_->publish(messageEng);
+				publisherEng->publish(messageEng);
 			}
 			break;
 		case 52: // 4: reset imu
@@ -306,7 +298,7 @@ int main(int argc, char** argv)
 			else
 			{
 				messageEng.eng_flag |= 0b00001000;
-				publisherEng_->publish(messageEng);
+				publisherEng->publish(messageEng);
 				messageEng.eng_flag &= ~0b00001000;
 
 				printf("[engineering] reset imu\n");
@@ -332,7 +324,7 @@ int main(int argc, char** argv)
 					messageEng.eng_flag &= ~0b00000010;
 					messageEng.eng_flag |= 0b00010000;
 				}
-				publisherEng_->publish(messageEng);
+				publisherEng->publish(messageEng);
 			}
 			break;
 		case 54: // 6: reset enc
@@ -344,7 +336,7 @@ int main(int argc, char** argv)
 			else
 			{
 				messageEng.eng_flag |= 0b00100000;
-				publisherEng_->publish(messageEng);
+				publisherEng->publish(messageEng);
 				messageEng.eng_flag &= ~0b00100000;
 
 				printf("[engineering] reset encoder\n");
@@ -359,7 +351,7 @@ int main(int argc, char** argv)
 			else
 			{
 				messageEng.eng_flag |= 0b01000000;
-				publisherEng_->publish(messageEng);
+				publisherEng->publish(messageEng);
 				messageEng.eng_flag &= ~0b01000000;
 
 				printf("[engineering] build lookup\n");
@@ -374,7 +366,7 @@ int main(int argc, char** argv)
 			else
 			{
 				messageEng.eng_flag |= 0b10000000;
-				publisherEng_->publish(messageEng);
+				publisherEng->publish(messageEng);
 				messageEng.eng_flag &= ~0b10000000;
 
 				printf("[engineering] clear built lookup\n");
@@ -390,7 +382,7 @@ int main(int argc, char** argv)
 			if (calInitiated)
 			{
 				messageEng.eng_flag |= 0b10100000000;
-				publisherEng_->publish(messageEng);
+				publisherEng->publish(messageEng);
 				messageEng.eng_flag &= ~0b10100000000;
 
 				calInitiated = false;
@@ -402,7 +394,7 @@ int main(int argc, char** argv)
 			if (calInitiated)
 			{
 				messageEng.eng_flag |= 0b01100000000;
-				publisherEng_->publish(messageEng);
+				publisherEng->publish(messageEng);
 				messageEng.eng_flag &= ~0b01100000000;
 
 				calInitiated = false;
@@ -431,13 +423,11 @@ int main(int argc, char** argv)
 			break;
 		}
 
-		loop_rate.sleep();
+		loopRate.sleep();
 	}
 
 	/* restore the former settings */
-	tcsetattr(STDIN_FILENO, TCSANOW, &old_tio);
-
-	thHandler->join();
+	tcsetattr(STDIN_FILENO, TCSANOW, &oldTio);
 
 	return 0;
 }
