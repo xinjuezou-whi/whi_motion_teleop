@@ -379,7 +379,7 @@ void sigintHandler(int sig)
 
 int main(int argc, char** argv)
 {
-	std::string nodeName("whi_motion_ctrl_teleop");
+	std::string nodeName("whi_motion_teleop");
 	ros::init(argc, argv, nodeName);
 
 	ros::NodeHandle node;

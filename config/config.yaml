@@ -1,4 +1,4 @@
-whi_motion_ctrl_teleop:
+whi_motion_teleop:
   command_frequency: 20 # Hz
   motion_state_topic: motion_state
   linear: # m/s

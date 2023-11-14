@@ -1,0 +1,11 @@
+<?xml version="1.0"?>
+<launch>
+  <!-- argument -->
+
+  <!-- params -->
+  <rosparam file="$(find whi_motion_teleop)/config/config.yaml" command="load" subst_value="true"/>
+
+  <!-- node -->
+  <node pkg="whi_motion_teleop" type="whi_motion_teleop_node" name="whi_motion_teleop" output="screen"/>
+
+</launch>
