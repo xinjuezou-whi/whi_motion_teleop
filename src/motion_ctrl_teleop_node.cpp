@@ -21,100 +21,32 @@ Changelog:
 #include <ros/ros.h>
 #include <std_msgs/String.h>
 #include <geometry_msgs/Twist.h>
+
 #include <whi_interfaces/WhiEng.h>
+#include <whi_interfaces/WhiMotionState.h>
+
 #include <string>
 #include <thread>
 #include <signal.h>
 
-static const char* VERSION = "01.12.0";
+static const char* VERSION = "01.13.0";
 static double linearMin = 0.01;
 static double linearMax = 2.5;
 static double angularMin = 0.1;
 static double angularMax = 1.6;
 static double stepLinear = 0.01;
 static double stepAngular = 0.1;
-static int cmdRate = 200; // millisecond
 static bool calInitiated = false;
+static std::shared_ptr<ros::Publisher> publisherCmd = nullptr;
+static std::shared_ptr<ros::Publisher> publisherEng = nullptr;
+static geometry_msgs::Twist messageCmd;
+static whi_interfaces::WhiEng messageEng;
+static struct termios oldTio;
 static std::atomic_bool terminating = false;
 static std::shared_ptr<std::thread> thHandler = nullptr;
-static std::shared_ptr<ros::Publisher> publisherCmd = nullptr;
-static struct termios oldTio;
 
-void callbackFresher(std::shared_ptr<ros::Publisher> Pub, const geometry_msgs::Twist& Msg)
+void printInstruction(double Linear, double Angular)
 {
-	while (!terminating.load())
-	{
-		Pub->publish(Msg);
-
-		std::this_thread::sleep_for(std::chrono::milliseconds(cmdRate));
-	}
-}
-
-void sigintHandler(int sig)
-{
-	// Do some custom action.
-	// For example, publish a stop message to some other nodes.
-	std::cout << "quiting......" << std::endl;
-
-	geometry_msgs::Twist messageCmd;
-	messageCmd.linear.x = 0.0;
-	messageCmd.angular.z = 0.0;
-	publisherCmd->publish(messageCmd);
-
-	/* restore the former settings */
-	tcsetattr(STDIN_FILENO, TCSANOW, &oldTio);
-
-	terminating.store(true);
-	thHandler->join();
- 
-	// All the default sigint handler does is call shutdown()
-	ros::shutdown();
-}
-
-int main(int argc, char** argv)
-{
-	std::string nodeName("whi_motion_ctrl_teleop");
-	ros::init(argc, argv, nodeName);
-
-	ros::NodeHandle node;
-
-	// Override the default ros sigint handler.
-	// This must be set after the first NodeHandle is created.
-	signal(SIGINT, sigintHandler);
-
-	// params
-	double frequency = 1.0;
-	node.param(nodeName + "/command_frequency", frequency, 5.0);
-	cmdRate = int(1000.0 / frequency);
-	node.param(nodeName + "/linear/min", linearMin, 0.01);
-	node.param(nodeName + "/linear/min", linearMax, 2.5);
-	node.param(nodeName + "/linear/step", stepLinear, 0.01);
-	node.param(nodeName + "/angular/min", angularMin, 0.1);
-	node.param(nodeName + "/angular/min", angularMax, 1.6);
-	node.param(nodeName + "/angular/step", stepAngular, 0.1);
-
-	struct termios newTio;
-
-	/* get the terminal settings for stdin */
-	tcgetattr(STDIN_FILENO, &oldTio);
-
-	/* we want to keep the old setting to restore them a the end */
-	newTio = oldTio;
-
-	/* disable canonical mode (buffered i/o) and local echo */
-	newTio.c_lflag &= (~ICANON & ~ECHO);
-
-	/* set the new settings immediately */
-	tcsetattr(STDIN_FILENO, TCSANOW, &newTio);
-
-	double targetLinearVel = 0.0;
-	double targetAngularVel = 0.0;
-
-	printf("\n");
-	printf("TELEOP VERSION %s\n", VERSION);
-	printf("Copyright © 2018-2023 Wheel Hub Intelligent Co.,Ltd. All rights reserved\n\n");
-	printf("set linear range: %.2f to %.2f, step: %.2f\n", linearMin, linearMax, stepLinear);
-	printf("set angular range: %.2f to %.2f, step: %.2f\n", angularMin, angularMax, stepAngular);
 	printf("\n");
 	printf("           w - forward\n");
 	printf("a - left   s - stop      d - right\n");
@@ -122,19 +54,24 @@ int main(int argc, char** argv)
 	printf("\n");
 	printf("q - quit\n");
 	printf("\n");
-	printf("linear %.2f, angular %.2f\n", targetLinearVel, targetAngularVel);
+	printf("linear %.2f, angular %.2f\n", Linear, Angular);
+}
 
-	publisherCmd = std::make_shared<ros::Publisher>(node.advertise<geometry_msgs::Twist>("cmd_vel", 50));
-	std::shared_ptr<ros::Publisher> publisherEng =
-		std::make_shared<ros::Publisher>(node.advertise<whi_interfaces::WhiEng>("eng", 50));
-	geometry_msgs::Twist messageCmd;
-	whi_interfaces::WhiEng messageEng;
+void subCallbackMotionState(const whi_interfaces::WhiMotionState::ConstPtr& MotionState)
+{
+	if (MotionState->state == whi_interfaces::WhiMotionState::STA_CRITICAL_COLLISION)
+	{
+		messageCmd.linear.x = 0.0;
+		messageCmd.angular.z = 0.0;
+		publisherCmd->publish(messageCmd);
 
-	// spawn a thread to fresh publication
-	thHandler = std::make_shared<std::thread>(std::bind(&callbackFresher, publisherCmd, std::ref(messageCmd)));
-	
-	ros::Rate loopRate(10.0);
-	while (node.ok())
+		printf("[cmd] linear %.2f, angular %.2f\n", messageCmd.linear.x, messageCmd.angular.z);
+	}
+}
+
+void userInput()
+{
+	while (!terminating.load())
 	{
 		switch (getchar())
 		{
@@ -411,23 +348,95 @@ int main(int argc, char** argv)
 			else
 			{
 				printf("[warn] unrecognized command. using following commands:\n");
-				printf("\n");
-				printf("           w - forward\n");
-				printf("a - left   s - stop      d - right\n");
-				printf("           x - backward\n");
-				printf("\n");
-				printf("q - quit\n");
-				printf("\n");
-				printf("linear %.2f, angular %.2f\n", messageCmd.linear.x, messageCmd.angular.z);
+				printInstruction(messageCmd.linear.x, messageCmd.angular.z);
 			}
 			break;
 		}
 
-		loopRate.sleep();
+		std::this_thread::sleep_for(std::chrono::milliseconds(100));
 	}
+}
+
+void sigintHandler(int sig)
+{
+	// Do some custom action.
+	// For example, publish a stop message to some other nodes.
+	std::cout << "quiting......" << std::endl;
 
 	/* restore the former settings */
 	tcsetattr(STDIN_FILENO, TCSANOW, &oldTio);
+
+	messageCmd.linear.x = 0.0;
+	messageCmd.angular.z = 0.0;
+	publisherCmd->publish(messageCmd);
+
+	terminating.store(true);
+	thHandler->join();
+ 
+	// All the default sigint handler does is call shutdown()
+	ros::shutdown();
+}
+
+int main(int argc, char** argv)
+{
+	std::string nodeName("whi_motion_ctrl_teleop");
+	ros::init(argc, argv, nodeName);
+
+	ros::NodeHandle node;
+
+	// Override the default ros sigint handler.
+	// This must be set after the first NodeHandle is created.
+	signal(SIGINT, sigintHandler);
+
+	// params
+	double frequency = 1.0;
+	node.param(nodeName + "/command_frequency", frequency, 5.0);
+	std::string stateTopic;
+	node.param(nodeName + "/motion_state_topic", stateTopic, std::string(""));
+	node.param(nodeName + "/linear/min", linearMin, 0.01);
+	node.param(nodeName + "/linear/min", linearMax, 2.5);
+	node.param(nodeName + "/linear/step", stepLinear, 0.01);
+	node.param(nodeName + "/angular/min", angularMin, 0.1);
+	node.param(nodeName + "/angular/min", angularMax, 1.6);
+	node.param(nodeName + "/angular/step", stepAngular, 0.1);
+
+	/* get the terminal settings for stdin */
+	tcgetattr(STDIN_FILENO, &oldTio);
+	/* we want to keep the old setting to restore them a the end */
+	struct termios newTio = oldTio;
+	/* disable canonical mode (buffered i/o) and local echo */
+	newTio.c_lflag &= (~ICANON & ~ECHO);
+	/* set the new settings immediately */
+	tcsetattr(STDIN_FILENO, TCSANOW, &newTio);
+
+	printf("\n");
+	printf("TELEOP VERSION %s\n", VERSION);
+	printf("Copyright © 2018-2023 Wheel Hub Intelligent Co.,Ltd. All rights reserved\n\n");
+	printf("set linear range: %.2f to %.2f, step: %.2f\n", linearMin, linearMax, stepLinear);
+	printf("set angular range: %.2f to %.2f, step: %.2f\n", angularMin, angularMax, stepAngular);
+	printInstruction(0.0, 0.0);
+
+	std::unique_ptr<ros::Subscriber> subMotionState = nullptr;
+	if (!stateTopic.empty())
+	{
+		subMotionState = std::make_unique<ros::Subscriber>(
+            node.subscribe<whi_interfaces::WhiMotionState>(stateTopic, 10, subCallbackMotionState));
+	}
+
+	publisherCmd = std::make_shared<ros::Publisher>(node.advertise<geometry_msgs::Twist>("cmd_vel", 50));
+	publisherEng = std::make_shared<ros::Publisher>(node.advertise<whi_interfaces::WhiEng>("eng", 50));
+
+	// spawn a thread to fresh publication
+	thHandler = std::make_shared<std::thread>(userInput);
+	
+	ros::Rate loopRate(frequency);
+	while (node.ok())
+	{
+		publisherCmd->publish(messageCmd);
+
+		ros::spinOnce();
+		loopRate.sleep();
+	}
 
 	return 0;
 }
