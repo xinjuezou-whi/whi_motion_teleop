@@ -14,3 +14,18 @@ tele-operation for manipulating movable robots under ROS 1. It publishes geometr
 | 6   | reset the value of the encoder                       |
 | 7   | calibrate the map between reference and PWM duty |
 | 8   | clear calibration results                        |
+
+## Params
+```
+whi_motion_teleop:
+  command_frequency: 20 # Hz
+  motion_state_topic: motion_state
+  linear: # m/s
+    min: 0.08
+    max: 0.3
+    step: 0.01 
+  angular: # rad/s
+    min: 0.1
+    max: 1.0
+    step: 0.1
+```
