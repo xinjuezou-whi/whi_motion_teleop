@@ -1,6 +1,11 @@
 # whi_motion_teleop
 tele-operation for manipulating movable robots under ROS 1. It publishes geometry_msgs/Twist Message with user-defined topic(default: cmd_vel)
 
+## Dependencies
+```
+git clone https://github.com/xinjuezou-whi/whi_interfaces.git
+```
+
 ## Manipulating keys definition
 ![Untitled Diagram drawio](https://user-images.githubusercontent.com/72239958/202851886-e404eafc-dae1-488b-bbb4-356eb4cca441.png)
 
