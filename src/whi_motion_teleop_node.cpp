@@ -29,7 +29,7 @@ Changelog:
 #include <thread>
 #include <signal.h>
 
-static const char* VERSION = "01.13.0";
+static const char* VERSION = "01.13.1";
 static double linearMin = 0.01;
 static double linearMax = 2.5;
 static double angularMin = 0.1;
@@ -59,7 +59,8 @@ void printInstruction(double Linear, double Angular)
 
 void subCallbackMotionState(const whi_interfaces::WhiMotionState::ConstPtr& MotionState)
 {
-	if (MotionState->state == whi_interfaces::WhiMotionState::STA_CRITICAL_COLLISION)
+	if (MotionState->state == whi_interfaces::WhiMotionState::STA_CRITICAL_COLLISION ||
+		MotionState->state == whi_interfaces::WhiMotionState::STA_REMOTE)
 	{
 		messageCmd.linear.x = 0.0;
 		messageCmd.angular.z = 0.0;
