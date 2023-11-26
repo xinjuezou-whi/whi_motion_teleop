@@ -30,20 +30,22 @@ Changelog:
 #include <signal.h>
 
 static const char* VERSION = "01.13.1";
-static double linearMin = 0.01;
-static double linearMax = 2.5;
-static double angularMin = 0.1;
-static double angularMax = 1.6;
-static double stepLinear = 0.01;
-static double stepAngular = 0.1;
-static bool calInitiated = false;
-static std::shared_ptr<ros::Publisher> publisherCmd = nullptr;
-static std::shared_ptr<ros::Publisher> publisherEng = nullptr;
-static geometry_msgs::Twist messageCmd;
-static whi_interfaces::WhiEng messageEng;
-static struct termios oldTio;
+static double linear_min = 0.01;
+static double linear_max = 2.5;
+static double angular_min = 0.1;
+static double angular_max = 1.6;
+static double step_linear = 0.01;
+static double step_angular = 0.1;
+static bool cal_initiated = false;
+static std::shared_ptr<ros::Publisher> pub_twist = nullptr;
+static std::shared_ptr<ros::Publisher> pub_eng = nullptr;
+static geometry_msgs::Twist msg_twist;
+static whi_interfaces::WhiEng msg_eng;
+static struct termios old_tio;
 static std::atomic_bool terminating = false;
-static std::shared_ptr<std::thread> thHandler = nullptr;
+static std::shared_ptr<std::thread> th_handler = nullptr;
+static std::atomic_bool remote_mode = false;
+static std::atomic_bool toggle_collision = false;
 
 void printInstruction(double Linear, double Angular)
 {
@@ -59,14 +61,38 @@ void printInstruction(double Linear, double Angular)
 
 void subCallbackMotionState(const whi_interfaces::WhiMotionState::ConstPtr& MotionState)
 {
-	if (MotionState->state == whi_interfaces::WhiMotionState::STA_CRITICAL_COLLISION ||
-		MotionState->state == whi_interfaces::WhiMotionState::STA_REMOTE)
+	if (MotionState->state == whi_interfaces::WhiMotionState::STA_CRITICAL_COLLISION)
 	{
-		messageCmd.linear.x = 0.0;
-		messageCmd.angular.z = 0.0;
-		publisherCmd->publish(messageCmd);
+		msg_twist.linear.x = 0.0;
+		msg_twist.angular.z = 0.0;
+		pub_twist->publish(msg_twist);
 
-		printf("[cmd] linear %.2f, angular %.2f\n", messageCmd.linear.x, messageCmd.angular.z);
+		if (!toggle_collision.load())
+		{
+			printf("[cmd] linear %.2f, angular %.2f\n", msg_twist.linear.x, msg_twist.angular.z);
+		}
+		toggle_collision.store(true);
+	}
+	else if (MotionState->state == whi_interfaces::WhiMotionState::STA_CRITICAL_COLLISION_CLEAR)
+	{
+		toggle_collision.store(false);
+	}
+
+	if (MotionState->state == whi_interfaces::WhiMotionState::STA_REMOTE)
+	{
+		if (!remote_mode.load())
+		{
+			msg_twist.linear.x = 0.0;
+			msg_twist.angular.z = 0.0;
+			pub_twist->publish(msg_twist);
+
+			printf("[cmd] linear %.2f, angular %.2f\n", msg_twist.linear.x, msg_twist.angular.z);
+		}
+		remote_mode.store(true);
+	}
+	else if (MotionState->state == whi_interfaces::WhiMotionState::STA_AUTO)
+	{
+		remote_mode.store(false);
 	}
 }
 
@@ -74,274 +100,282 @@ void userInput()
 {
 	while (!terminating.load())
 	{
-		switch (getchar())
+		int ch = getchar();
+		if (remote_mode.load())
+		{
+			printf("\nvehicle is in remote control mode, command is ignored\n");
+
+			continue;
+		}
+
+		switch (ch)
 		{
 		case 32: // s
 		case 115: // space
 			// stop
-			if (calInitiated)
+			if (cal_initiated)
 			{
 				printf("[engineering] please specify direction:\n");
 				printf("[engineering] + counter-clock, - clock\n");
 			}
 			else
 			{
-				messageCmd.linear.x = 0.0;
-				messageCmd.angular.z = 0.0;
-				publisherCmd->publish(messageCmd);
+				msg_twist.linear.x = 0.0;
+				msg_twist.angular.z = 0.0;
+				pub_twist->publish(msg_twist);
 
-				printf("[cmd] linear %.2f, angular %.2f\n", messageCmd.linear.x, messageCmd.angular.z);
+				printf("[cmd] linear %.2f, angular %.2f\n", msg_twist.linear.x, msg_twist.angular.z);
 			}
 			break;
 		case 97: // a
 			// left
-			if (calInitiated)
+			if (cal_initiated)
 			{
 				printf("[engineering] please specify direction:\n");
 				printf("[engineering] + counter-clock, - clock\n");
 			}
 			else
 			{
-				if (fabs(messageCmd.angular.z) < 1e-4)
+				if (fabs(msg_twist.angular.z) < 1e-4)
 				{
-					messageCmd.angular.z = angularMin;
+					msg_twist.angular.z = angular_min;
 				}
 				else
 				{
-					messageCmd.angular.z += stepAngular;
-					if (messageCmd.angular.z > angularMax)
+					msg_twist.angular.z += step_angular;
+					if (msg_twist.angular.z > angular_max)
 					{
-						messageCmd.angular.z = angularMax;
+						msg_twist.angular.z = angular_max;
 					}
 				}
-				publisherCmd->publish(messageCmd);
+				pub_twist->publish(msg_twist);
 
-				printf("[cmd] linear %.2f, angular %.2f\n", messageCmd.linear.x, messageCmd.angular.z);
+				printf("[cmd] linear %.2f, angular %.2f\n", msg_twist.linear.x, msg_twist.angular.z);
 			}
 			break;
 		case 100: // d
 			// right
-			if (calInitiated)
+			if (cal_initiated)
 			{
 				printf("[engineering] please specify direction:\n");
 				printf("[engineering] + counter-clock, - clock\n");
 			}
 			else
 			{
-				if (fabs(messageCmd.angular.z) < 1e-4)
+				if (fabs(msg_twist.angular.z) < 1e-4)
 				{
-					messageCmd.angular.z = -angularMin;
+					msg_twist.angular.z = -angular_min;
 				}
 				else
 				{
-					messageCmd.angular.z -= stepAngular;
-					if (messageCmd.angular.z < -angularMax)
+					msg_twist.angular.z -= step_angular;
+					if (msg_twist.angular.z < -angular_max)
 					{
-						messageCmd.angular.z = -angularMax;
+						msg_twist.angular.z = -angular_max;
 					}
 				}
-				publisherCmd->publish(messageCmd);
+				pub_twist->publish(msg_twist);
 
-				printf("[cmd] linear %.2f, angular %.2f\n", messageCmd.linear.x, messageCmd.angular.z);
+				printf("[cmd] linear %.2f, angular %.2f\n", msg_twist.linear.x, msg_twist.angular.z);
 			}
 			break;
 		case 119: // w
 			// forward
-			if (calInitiated)
+			if (cal_initiated)
 			{
 				printf("[engineering] please specify direction:\n");
 				printf("[engineering] + counter-clock, - clock\n");
 			}
 			else
 			{
-				if (fabs(messageCmd.linear.x) < 1e-4)
+				if (fabs(msg_twist.linear.x) < 1e-4)
 				{
-					messageCmd.linear.x = linearMin;
+					msg_twist.linear.x = linear_min;
 				}
 				else
 				{
-					messageCmd.linear.x += stepLinear;
-					if (messageCmd.linear.x > linearMax)
+					msg_twist.linear.x += step_linear;
+					if (msg_twist.linear.x > linear_max)
 					{
-						messageCmd.linear.x = linearMax;
+						msg_twist.linear.x = linear_max;
 					}
 				}
-				publisherCmd->publish(messageCmd);
+				pub_twist->publish(msg_twist);
 
-				printf("[cmd] linear %.2f, angular %.2f\n", messageCmd.linear.x, messageCmd.angular.z);
+				printf("[cmd] linear %.2f, angular %.2f\n", msg_twist.linear.x, msg_twist.angular.z);
 			}
 			break;
 		case 120: // x
 			// backward
-			if (calInitiated)
+			if (cal_initiated)
 			{
 				printf("[engineering] please specify direction:\n");
 				printf("[engineering] + counter-clock, - clock\n");
 			}
 			else
 			{
-				if (fabs(messageCmd.linear.x) < 1e-4)
+				if (fabs(msg_twist.linear.x) < 1e-4)
 				{
-					messageCmd.linear.x = -linearMin;
+					msg_twist.linear.x = -linear_min;
 				}
 				else
 				{
-					messageCmd.linear.x -= stepLinear;
-					if (messageCmd.linear.x < -linearMax)
+					msg_twist.linear.x -= step_linear;
+					if (msg_twist.linear.x < -linear_max)
 					{
-						messageCmd.linear.x = -linearMax;
+						msg_twist.linear.x = -linear_max;
 					}
 				}
 				
 
-				printf("[cmd] linear %.2f, angular %.2f\n", messageCmd.linear.x, messageCmd.angular.z);
+				printf("[cmd] linear %.2f, angular %.2f\n", msg_twist.linear.x, msg_twist.angular.z);
 			}
 			break;
 		case 48: // 0
-			messageEng.eng_flag = 0;
-			calInitiated = false;
-			publisherEng->publish(messageEng);
+			msg_eng.eng_flag = 0;
+			cal_initiated = false;
+			pub_eng->publish(msg_eng);
 
 			printf("[engineering] eng all neutralized\n");
 			break;
 		case 51: // 3: print imu
-			if (calInitiated)
+			if (cal_initiated)
 			{
 				printf("[engineering] please specify direction:\n");
 				printf("[engineering] + counter-clock, - clock\n");
 			}
 			else
 			{
-				if (messageEng.eng_flag & 0b00000100)
+				if (msg_eng.eng_flag & 0b00000100)
 				{
 					printf("[engineering] printf imu off\n");
-					messageEng.eng_flag &= ~0b00000100;
-					messageEng.eng_flag |= 0b00000001;
+					msg_eng.eng_flag &= ~0b00000100;
+					msg_eng.eng_flag |= 0b00000001;
 				}
 				else
 				{
 					printf("[engineering] printf imu\n");
-					messageEng.eng_flag &= ~0b00000001;
-					messageEng.eng_flag |= 0b00000100;
+					msg_eng.eng_flag &= ~0b00000001;
+					msg_eng.eng_flag |= 0b00000100;
 				}
-				publisherEng->publish(messageEng);
+				pub_eng->publish(msg_eng);
 			}
 			break;
 		case 52: // 4: reset imu
-			if (calInitiated)
+			if (cal_initiated)
 			{
 				printf("[engineering] please specify direction:\n");
 				printf("[engineering] + counter-clock, - clock\n");
 			}
 			else
 			{
-				messageEng.eng_flag |= 0b00001000;
-				publisherEng->publish(messageEng);
-				messageEng.eng_flag &= ~0b00001000;
+				msg_eng.eng_flag |= 0b00001000;
+				pub_eng->publish(msg_eng);
+				msg_eng.eng_flag &= ~0b00001000;
 
 				printf("[engineering] reset imu\n");
 			}
 			break;
 		case 53: // 5: print enc
-			if (calInitiated)
+			if (cal_initiated)
 			{
 				printf("[engineering] please specify direction:\n");
 				printf("[engineering] + counter-clock, - clock\n");
 			}
 			else
 			{
-				if (messageEng.eng_flag & 0b00010000)
+				if (msg_eng.eng_flag & 0b00010000)
 				{
 					printf("[engineering] print incoder off\n");
-					messageEng.eng_flag &= ~0b00010000;
-					messageEng.eng_flag |= 0b00000010;
+					msg_eng.eng_flag &= ~0b00010000;
+					msg_eng.eng_flag |= 0b00000010;
 				}
 				else
 				{
 					printf("[engineering] print incoder\n");
-					messageEng.eng_flag &= ~0b00000010;
-					messageEng.eng_flag |= 0b00010000;
+					msg_eng.eng_flag &= ~0b00000010;
+					msg_eng.eng_flag |= 0b00010000;
 				}
-				publisherEng->publish(messageEng);
+				pub_eng->publish(msg_eng);
 			}
 			break;
 		case 54: // 6: reset enc
-			if (calInitiated)
+			if (cal_initiated)
 			{
 				printf("[engineering] please specify direction:\n");
 				printf("[engineering] + counter-clock, - clock\n");
 			}
 			else
 			{
-				messageEng.eng_flag |= 0b00100000;
-				publisherEng->publish(messageEng);
-				messageEng.eng_flag &= ~0b00100000;
+				msg_eng.eng_flag |= 0b00100000;
+				pub_eng->publish(msg_eng);
+				msg_eng.eng_flag &= ~0b00100000;
 
 				printf("[engineering] reset encoder\n");
 			}
 			break;
 		case 55: // 7: build lookup
-			if (calInitiated)
+			if (cal_initiated)
 			{
 				printf("[engineering] please specify direction:\n");
 				printf("[engineering] + counter-clock, - clock\n");
 			}
 			else
 			{
-				messageEng.eng_flag |= 0b01000000;
-				publisherEng->publish(messageEng);
-				messageEng.eng_flag &= ~0b01000000;
+				msg_eng.eng_flag |= 0b01000000;
+				pub_eng->publish(msg_eng);
+				msg_eng.eng_flag &= ~0b01000000;
 
 				printf("[engineering] build lookup\n");
 			}
 			break;
 		case 56: // 8: clear lookup
-			if (calInitiated)
+			if (cal_initiated)
 			{
 				printf("[engineering] please specify direction:\n");
 				printf("[engineering] + counter-clock, - clock\n");
 			}
 			else
 			{
-				messageEng.eng_flag |= 0b10000000;
-				publisherEng->publish(messageEng);
-				messageEng.eng_flag &= ~0b10000000;
+				msg_eng.eng_flag |= 0b10000000;
+				pub_eng->publish(msg_eng);
+				msg_eng.eng_flag &= ~0b10000000;
 
 				printf("[engineering] clear built lookup\n");
 			}
 			break;
 		case 57: // 9: diameter compensation calibration
-			calInitiated = true;
+			cal_initiated = true;
 
 			printf("[engineering] start diameter compensation calibration, please specify direction:\n");
 			printf("[engineering] + counter-clock, - clock\n");
 			break;
 		case 45: // -: clockwise
-			if (calInitiated)
+			if (cal_initiated)
 			{
-				messageEng.eng_flag |= 0b10100000000;
-				publisherEng->publish(messageEng);
-				messageEng.eng_flag &= ~0b10100000000;
+				msg_eng.eng_flag |= 0b10100000000;
+				pub_eng->publish(msg_eng);
+				msg_eng.eng_flag &= ~0b10100000000;
 
-				calInitiated = false;
+				cal_initiated = false;
 
 				printf("[engineering] diameter compensation calibration: clockwise\n");
 				break;
 			}
 		case 43: // +: counter-clockwise
-			if (calInitiated)
+			if (cal_initiated)
 			{
-				messageEng.eng_flag |= 0b01100000000;
-				publisherEng->publish(messageEng);
-				messageEng.eng_flag &= ~0b01100000000;
+				msg_eng.eng_flag |= 0b01100000000;
+				pub_eng->publish(msg_eng);
+				msg_eng.eng_flag &= ~0b01100000000;
 
-				calInitiated = false;
+				cal_initiated = false;
 
 				printf("[engineering] diameter compensation calibration: counter-clockwise\n");
 				break;
 			}
 		default:
-			if (calInitiated)
+			if (cal_initiated)
 			{
 				printf("[engineering] please specify direction:\n");
 				printf("[engineering] + counter-clock, - clock\n");
@@ -349,7 +383,7 @@ void userInput()
 			else
 			{
 				printf("[warn] unrecognized command. using following commands:\n");
-				printInstruction(messageCmd.linear.x, messageCmd.angular.z);
+				printInstruction(msg_twist.linear.x, msg_twist.angular.z);
 			}
 			break;
 		}
@@ -365,14 +399,14 @@ void sigintHandler(int sig)
 	std::cout << "quiting......" << std::endl;
 
 	/* restore the former settings */
-	tcsetattr(STDIN_FILENO, TCSANOW, &oldTio);
+	tcsetattr(STDIN_FILENO, TCSANOW, &old_tio);
 
-	messageCmd.linear.x = 0.0;
-	messageCmd.angular.z = 0.0;
-	publisherCmd->publish(messageCmd);
+	msg_twist.linear.x = 0.0;
+	msg_twist.angular.z = 0.0;
+	pub_twist->publish(msg_twist);
 
 	terminating.store(true);
-	thHandler->join();
+	th_handler->join();
  
 	// All the default sigint handler does is call shutdown()
 	ros::shutdown();
@@ -394,17 +428,17 @@ int main(int argc, char** argv)
 	node.param(nodeName + "/command_frequency", frequency, 5.0);
 	std::string stateTopic;
 	node.param(nodeName + "/motion_state_topic", stateTopic, std::string(""));
-	node.param(nodeName + "/linear/min", linearMin, 0.01);
-	node.param(nodeName + "/linear/min", linearMax, 2.5);
-	node.param(nodeName + "/linear/step", stepLinear, 0.01);
-	node.param(nodeName + "/angular/min", angularMin, 0.1);
-	node.param(nodeName + "/angular/min", angularMax, 1.6);
-	node.param(nodeName + "/angular/step", stepAngular, 0.1);
+	node.param(nodeName + "/linear/min", linear_min, 0.01);
+	node.param(nodeName + "/linear/min", linear_max, 2.5);
+	node.param(nodeName + "/linear/step", step_linear, 0.01);
+	node.param(nodeName + "/angular/min", angular_min, 0.1);
+	node.param(nodeName + "/angular/min", angular_max, 1.6);
+	node.param(nodeName + "/angular/step", step_angular, 0.1);
 
 	/* get the terminal settings for stdin */
-	tcgetattr(STDIN_FILENO, &oldTio);
+	tcgetattr(STDIN_FILENO, &old_tio);
 	/* we want to keep the old setting to restore them a the end */
-	struct termios newTio = oldTio;
+	struct termios newTio = old_tio;
 	/* disable canonical mode (buffered i/o) and local echo */
 	newTio.c_lflag &= (~ICANON & ~ECHO);
 	/* set the new settings immediately */
@@ -413,8 +447,8 @@ int main(int argc, char** argv)
 	printf("\n");
 	printf("TELEOP VERSION %s\n", VERSION);
 	printf("Copyright © 2018-2024 Wheel Hub Intelligent Co.,Ltd. All rights reserved\n\n");
-	printf("set linear range: %.2f to %.2f, step: %.2f\n", linearMin, linearMax, stepLinear);
-	printf("set angular range: %.2f to %.2f, step: %.2f\n", angularMin, angularMax, stepAngular);
+	printf("set linear range: %.2f to %.2f, step: %.2f\n", linear_min, linear_max, step_linear);
+	printf("set angular range: %.2f to %.2f, step: %.2f\n", angular_min, angular_max, step_angular);
 	printInstruction(0.0, 0.0);
 
 	std::unique_ptr<ros::Subscriber> subMotionState = nullptr;
@@ -424,16 +458,19 @@ int main(int argc, char** argv)
             node.subscribe<whi_interfaces::WhiMotionState>(stateTopic, 10, subCallbackMotionState));
 	}
 
-	publisherCmd = std::make_shared<ros::Publisher>(node.advertise<geometry_msgs::Twist>("cmd_vel", 50));
-	publisherEng = std::make_shared<ros::Publisher>(node.advertise<whi_interfaces::WhiEng>("eng", 50));
+	pub_twist = std::make_shared<ros::Publisher>(node.advertise<geometry_msgs::Twist>("cmd_vel", 50));
+	pub_eng = std::make_shared<ros::Publisher>(node.advertise<whi_interfaces::WhiEng>("eng", 50));
 
 	// spawn a thread to fresh publication
-	thHandler = std::make_shared<std::thread>(userInput);
+	th_handler = std::make_shared<std::thread>(userInput);
 	
 	ros::Rate loopRate(frequency);
 	while (node.ok())
 	{
-		publisherCmd->publish(messageCmd);
+		if (!remote_mode.load())
+		{
+			pub_twist->publish(msg_twist);
+		}
 
 		ros::spinOnce();
 		loopRate.sleep();
