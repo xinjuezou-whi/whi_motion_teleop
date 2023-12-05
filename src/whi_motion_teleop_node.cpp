@@ -29,7 +29,7 @@ Changelog:
 #include <thread>
 #include <signal.h>
 
-static const char* VERSION = "01.13.1";
+static const char* VERSION = "01.13.2";
 static double linear_min = 0.01;
 static double linear_max = 2.5;
 static double angular_min = 0.1;
@@ -429,10 +429,10 @@ int main(int argc, char** argv)
 	std::string stateTopic;
 	node.param(nodeName + "/motion_state_topic", stateTopic, std::string(""));
 	node.param(nodeName + "/linear/min", linear_min, 0.01);
-	node.param(nodeName + "/linear/min", linear_max, 2.5);
+	node.param(nodeName + "/linear/max", linear_max, 2.5);
 	node.param(nodeName + "/linear/step", step_linear, 0.01);
 	node.param(nodeName + "/angular/min", angular_min, 0.1);
-	node.param(nodeName + "/angular/min", angular_max, 1.6);
+	node.param(nodeName + "/angular/max", angular_max, 1.6);
 	node.param(nodeName + "/angular/step", step_angular, 0.1);
 
 	/* get the terminal settings for stdin */
