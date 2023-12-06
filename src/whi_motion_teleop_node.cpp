@@ -29,7 +29,7 @@ Changelog:
 #include <thread>
 #include <signal.h>
 
-static const char* VERSION = "01.13.2";
+static const char* VERSION = "01.13.3";
 static double linear_min = 0.01;
 static double linear_max = 2.5;
 static double angular_min = 0.1;
@@ -45,6 +45,7 @@ static struct termios old_tio;
 static std::atomic_bool terminating = false;
 static std::shared_ptr<std::thread> th_handler = nullptr;
 static std::atomic_bool remote_mode = false;
+static std::atomic_bool toggle_estop = false;
 static std::atomic_bool toggle_collision = false;
 
 void printInstruction(double Linear, double Angular)
@@ -61,6 +62,24 @@ void printInstruction(double Linear, double Angular)
 
 void subCallbackMotionState(const whi_interfaces::WhiMotionState::ConstPtr& MotionState)
 {
+	if (MotionState->state == whi_interfaces::WhiMotionState::STA_ESTOP)
+	{
+		msg_twist.linear.x = 0.0;
+		msg_twist.angular.z = 0.0;
+		pub_twist->publish(msg_twist);
+
+		if (!toggle_estop.load())
+		{
+			printf("[warn] E-Stop detected\n");
+			printf("[cmd] linear %.2f, angular %.2f\n", msg_twist.linear.x, msg_twist.angular.z);
+		}
+		toggle_estop.store(true);
+	}
+	else if (MotionState->state == whi_interfaces::WhiMotionState::STA_ESTOP_CLEAR)
+	{
+		toggle_estop.store(false);
+	}
+
 	if (MotionState->state == whi_interfaces::WhiMotionState::STA_CRITICAL_COLLISION)
 	{
 		msg_twist.linear.x = 0.0;
@@ -69,6 +88,7 @@ void subCallbackMotionState(const whi_interfaces::WhiMotionState::ConstPtr& Moti
 
 		if (!toggle_collision.load())
 		{
+			printf("[warn] collision detected\n");
 			printf("[cmd] linear %.2f, angular %.2f\n", msg_twist.linear.x, msg_twist.angular.z);
 		}
 		toggle_collision.store(true);
@@ -101,10 +121,19 @@ void userInput()
 	while (!terminating.load())
 	{
 		int ch = getchar();
-		if (remote_mode.load())
+		if (toggle_estop.load())
+		{
+			printf("\nE-Stop detected, command is ignored\n");
+			continue;
+		}
+		else if (toggle_collision.load())
+		{
+			printf("\ncollision detected, command is ignored\n");
+			continue;
+		}
+		else if (remote_mode.load())
 		{
 			printf("\nvehicle is in remote control mode, command is ignored\n");
-
 			continue;
 		}
 
