@@ -1,6 +1,7 @@
 whi_motion_teleop:
   command_frequency: 20 # Hz
   motion_state_topic: motion_state
+  rc_state_topic: rc_state
   linear: # m/s
     min: 0.08
     max: 0.3

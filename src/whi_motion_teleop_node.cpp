@@ -24,12 +24,13 @@ Changelog:
 
 #include <whi_interfaces/WhiEng.h>
 #include <whi_interfaces/WhiMotionState.h>
+#include <whi_interfaces/WhiRcState.h>
 
 #include <string>
 #include <thread>
 #include <signal.h>
 
-static const char* VERSION = "01.13.3";
+static const char* VERSION = "01.14";
 static double linear_min = 0.01;
 static double linear_max = 2.5;
 static double angular_min = 0.1;
@@ -97,8 +98,11 @@ void subCallbackMotionState(const whi_interfaces::WhiMotionState::ConstPtr& Moti
 	{
 		toggle_collision.store(false);
 	}
+}
 
-	if (MotionState->state == whi_interfaces::WhiMotionState::STA_REMOTE)
+void subCallbackRcState(const whi_interfaces::WhiRcState::ConstPtr& RcState)
+{
+	if (RcState->state == whi_interfaces::WhiRcState::STA_REMOTE)
 	{
 		if (!remote_mode.load())
 		{
@@ -110,7 +114,7 @@ void subCallbackMotionState(const whi_interfaces::WhiMotionState::ConstPtr& Moti
 		}
 		remote_mode.store(true);
 	}
-	else if (MotionState->state == whi_interfaces::WhiMotionState::STA_AUTO)
+	else if (RcState->state == whi_interfaces::WhiRcState::STA_AUTO)
 	{
 		remote_mode.store(false);
 	}
@@ -455,8 +459,9 @@ int main(int argc, char** argv)
 	// params
 	double frequency = 1.0;
 	node.param(nodeName + "/command_frequency", frequency, 5.0);
-	std::string stateTopic;
+	std::string stateTopic, rcStateTopic;
 	node.param(nodeName + "/motion_state_topic", stateTopic, std::string(""));
+	node.param(nodeName + "/rc_state_topic", rcStateTopic, std::string(""));
 	node.param(nodeName + "/linear/min", linear_min, 0.01);
 	node.param(nodeName + "/linear/max", linear_max, 2.5);
 	node.param(nodeName + "/linear/step", step_linear, 0.01);
@@ -475,7 +480,7 @@ int main(int argc, char** argv)
 
 	printf("\n");
 	printf("TELEOP VERSION %s\n", VERSION);
-	printf("Copyright © 2018-2024 Wheel Hub Intelligent Co.,Ltd. All rights reserved\n\n");
+	printf("Copyright © 2018-2025 Wheel Hub Intelligent Co.,Ltd. All rights reserved\n\n");
 	printf("set linear range: %.2f to %.2f, step: %.2f\n", linear_min, linear_max, step_linear);
 	printf("set angular range: %.2f to %.2f, step: %.2f\n", angular_min, angular_max, step_angular);
 	printInstruction(0.0, 0.0);
@@ -485,6 +490,12 @@ int main(int argc, char** argv)
 	{
 		subMotionState = std::make_unique<ros::Subscriber>(
             node.subscribe<whi_interfaces::WhiMotionState>(stateTopic, 10, subCallbackMotionState));
+	}
+	std::unique_ptr<ros::Subscriber> subRcState = nullptr;
+	if (!rcStateTopic.empty())
+	{
+		subRcState = std::make_unique<ros::Subscriber>(
+            node.subscribe<whi_interfaces::WhiRcState>(rcStateTopic, 10, subCallbackRcState));
 	}
 
 	pub_twist = std::make_shared<ros::Publisher>(node.advertise<geometry_msgs::Twist>("cmd_vel", 50));
