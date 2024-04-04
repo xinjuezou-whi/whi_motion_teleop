@@ -30,7 +30,7 @@ Changelog:
 #include <thread>
 #include <signal.h>
 
-static const char* VERSION = "01.14";
+static const char* VERSION = "01.14.1";
 static double linear_min = 0.01;
 static double linear_max = 2.5;
 static double angular_min = 0.1;
@@ -40,6 +40,7 @@ static double step_angular = 0.1;
 static bool cal_initiated = false;
 static std::shared_ptr<ros::Publisher> pub_twist = nullptr;
 static std::shared_ptr<ros::Publisher> pub_eng = nullptr;
+static std::shared_ptr<ros::Publisher> pub_rc_state = nullptr;
 static geometry_msgs::Twist msg_twist;
 static whi_interfaces::WhiEng msg_eng;
 static struct termios old_tio;
@@ -56,7 +57,7 @@ void printInstruction(double Linear, double Angular)
 	printf("a - left   s - stop      d - right\n");
 	printf("           x - backward\n");
 	printf("\n");
-	printf("q - quit\n");
+	printf("c - clear AMR error\n");
 	printf("\n");
 	printf("linear %.2f, angular %.2f\n", Linear, Angular);
 }
@@ -262,6 +263,13 @@ void userInput()
 				
 
 				printf("[cmd] linear %.2f, angular %.2f\n", msg_twist.linear.x, msg_twist.angular.z);
+			}
+			break;
+		case 99: // c
+			{
+				whi_interfaces::WhiRcState msgState;
+                msgState.state = whi_interfaces::WhiRcState::STA_CLEAR_FAULT;
+                pub_rc_state->publish(msgState);
 			}
 			break;
 		case 48: // 0
@@ -500,6 +508,7 @@ int main(int argc, char** argv)
 
 	pub_twist = std::make_shared<ros::Publisher>(node.advertise<geometry_msgs::Twist>("cmd_vel", 50));
 	pub_eng = std::make_shared<ros::Publisher>(node.advertise<whi_interfaces::WhiEng>("eng", 50));
+    pub_rc_state = std::make_unique<ros::Publisher>(node.advertise<whi_interfaces::WhiRcState>(rcStateTopic, 50));        
 
 	// spawn a thread to fresh publication
 	th_handler = std::make_shared<std::thread>(userInput);
