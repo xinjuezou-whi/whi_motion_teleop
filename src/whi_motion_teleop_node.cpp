@@ -30,7 +30,7 @@ Changelog:
 #include <thread>
 #include <signal.h>
 
-static const char* VERSION = "01.14.1";
+static const char* VERSION = "01.14.2";
 static double linear_min = 0.01;
 static double linear_max = 2.5;
 static double angular_min = 0.1;
@@ -170,17 +170,14 @@ void userInput()
 			}
 			else
 			{
-				if (fabs(msg_twist.angular.z) < 1e-4)
+				msg_twist.angular.z += step_angular;
+				if (msg_twist.angular.z > angular_max)
+				{
+					msg_twist.angular.z = angular_max;
+				}
+				if (fabs(msg_twist.angular.z) > 1e-3)
 				{
 					msg_twist.angular.z = angular_min;
-				}
-				else
-				{
-					msg_twist.angular.z += step_angular;
-					if (msg_twist.angular.z > angular_max)
-					{
-						msg_twist.angular.z = angular_max;
-					}
 				}
 				pub_twist->publish(msg_twist);
 
@@ -196,17 +193,14 @@ void userInput()
 			}
 			else
 			{
-				if (fabs(msg_twist.angular.z) < 1e-4)
+				msg_twist.angular.z -= step_angular;
+				if (msg_twist.angular.z < -angular_max)
+				{
+					msg_twist.angular.z = -angular_max;
+				}
+				if (fabs(msg_twist.angular.z) > 1e-3)
 				{
 					msg_twist.angular.z = -angular_min;
-				}
-				else
-				{
-					msg_twist.angular.z -= step_angular;
-					if (msg_twist.angular.z < -angular_max)
-					{
-						msg_twist.angular.z = -angular_max;
-					}
 				}
 				pub_twist->publish(msg_twist);
 
@@ -222,17 +216,14 @@ void userInput()
 			}
 			else
 			{
-				if (fabs(msg_twist.linear.x) < 1e-4)
+				msg_twist.linear.x += step_linear;
+				if (msg_twist.linear.x > linear_max)
+				{
+					msg_twist.linear.x = linear_max;
+				}
+				if (fabs(msg_twist.linear.x) > 1e-3)
 				{
 					msg_twist.linear.x = linear_min;
-				}
-				else
-				{
-					msg_twist.linear.x += step_linear;
-					if (msg_twist.linear.x > linear_max)
-					{
-						msg_twist.linear.x = linear_max;
-					}
 				}
 				pub_twist->publish(msg_twist);
 
@@ -248,20 +239,16 @@ void userInput()
 			}
 			else
 			{
-				if (fabs(msg_twist.linear.x) < 1e-4)
+				msg_twist.linear.x -= step_linear;
+				if (msg_twist.linear.x < -linear_max)
+				{
+					msg_twist.linear.x = -linear_max;
+				}
+				if (fabs(msg_twist.linear.x) > 1e-3)
 				{
 					msg_twist.linear.x = -linear_min;
 				}
-				else
-				{
-					msg_twist.linear.x -= step_linear;
-					if (msg_twist.linear.x < -linear_max)
-					{
-						msg_twist.linear.x = -linear_max;
-					}
-				}
 				
-
 				printf("[cmd] linear %.2f, angular %.2f\n", msg_twist.linear.x, msg_twist.angular.z);
 			}
 			break;
@@ -476,6 +463,12 @@ int main(int argc, char** argv)
 	node.param(nodeName + "/angular/min", angular_min, 0.1);
 	node.param(nodeName + "/angular/max", angular_max, 1.6);
 	node.param(nodeName + "/angular/step", step_angular, 0.1);
+	linear_min = abs(linear_min);
+	linear_max = abs(linear_max);
+	step_linear = abs(step_linear);
+	angular_min = abs(angular_min);
+	angular_max = abs(angular_max);
+	step_angular = abs(step_angular);
 
 	/* get the terminal settings for stdin */
 	tcgetattr(STDIN_FILENO, &old_tio);
