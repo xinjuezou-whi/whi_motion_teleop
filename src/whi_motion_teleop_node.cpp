@@ -170,14 +170,22 @@ void userInput()
 			}
 			else
 			{
-				msg_twist.angular.z += step_angular;
+				if (fabs(msg_twist.angular.z) < 1e-5)
+				{
+					msg_twist.angular.z = angular_min;
+				}
+				else
+				{
+					msg_twist.angular.z += step_angular;
+				}
+
 				if (msg_twist.angular.z > angular_max)
 				{
 					msg_twist.angular.z = angular_max;
 				}
-				if (fabs(msg_twist.angular.z) > 1e-3 && fabs(msg_twist.angular.z) < angular_min)
+				if (fabs(msg_twist.angular.z) < angular_min)
 				{
-					msg_twist.angular.z = angular_min;
+					msg_twist.angular.z = 0.0;
 				}
 				pub_twist->publish(msg_twist);
 
@@ -193,14 +201,22 @@ void userInput()
 			}
 			else
 			{
-				msg_twist.angular.z -= step_angular;
+				if (fabs(msg_twist.angular.z) < 1e-5)
+				{
+					msg_twist.angular.z = -angular_min;
+				}
+				else
+				{
+					msg_twist.angular.z -= step_angular;
+				}
+
 				if (msg_twist.angular.z < -angular_max)
 				{
 					msg_twist.angular.z = -angular_max;
 				}
-				if (fabs(msg_twist.angular.z) > 1e-3 && fabs(msg_twist.angular.z) < angular_min)
+				if (fabs(msg_twist.angular.z) < angular_min)
 				{
-					msg_twist.angular.z = -angular_min;
+					msg_twist.angular.z = 0.0;
 				}
 				pub_twist->publish(msg_twist);
 
@@ -216,14 +232,22 @@ void userInput()
 			}
 			else
 			{
-				msg_twist.linear.x += step_linear;
+				if (fabs(msg_twist.linear.x) < 1e-5)
+				{
+					msg_twist.linear.x = linear_min;
+				}
+				else
+				{
+					msg_twist.linear.x += step_linear;
+				}
+				
 				if (msg_twist.linear.x > linear_max)
 				{
 					msg_twist.linear.x = linear_max;
 				}
-				if (fabs(msg_twist.linear.x) > 1e-3 && fabs(msg_twist.linear.x) < linear_min)
+				if (fabs(msg_twist.linear.x) < linear_min)
 				{
-					msg_twist.linear.x = linear_min;
+					msg_twist.linear.x = 0.0;
 				}
 				pub_twist->publish(msg_twist);
 
@@ -239,14 +263,22 @@ void userInput()
 			}
 			else
 			{
-				msg_twist.linear.x -= step_linear;
+				if (fabs(msg_twist.linear.x) < 1e-5)
+				{
+					msg_twist.linear.x = -linear_min;
+				}
+				else
+				{
+					msg_twist.linear.x -= step_linear;
+				}
+
 				if (msg_twist.linear.x < -linear_max)
 				{
 					msg_twist.linear.x = -linear_max;
 				}
-				if (fabs(msg_twist.linear.x) > 1e-3 && fabs(msg_twist.linear.x) < linear_min)
+				if (fabs(msg_twist.linear.x) < linear_min)
 				{
-					msg_twist.linear.x = -linear_min;
+					msg_twist.linear.x = 0.0;
 				}
 				
 				printf("[cmd] linear %.2f, angular %.2f\n", msg_twist.linear.x, msg_twist.angular.z);
