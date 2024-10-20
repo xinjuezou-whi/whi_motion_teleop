@@ -175,7 +175,7 @@ void userInput()
 				{
 					msg_twist.angular.z = angular_max;
 				}
-				if (fabs(msg_twist.angular.z) > 1e-3)
+				if (fabs(msg_twist.angular.z) > 1e-3 && fabs(msg_twist.angular.z) < angular_min)
 				{
 					msg_twist.angular.z = angular_min;
 				}
@@ -198,7 +198,7 @@ void userInput()
 				{
 					msg_twist.angular.z = -angular_max;
 				}
-				if (fabs(msg_twist.angular.z) > 1e-3)
+				if (fabs(msg_twist.angular.z) > 1e-3 && fabs(msg_twist.angular.z) < angular_min)
 				{
 					msg_twist.angular.z = -angular_min;
 				}
@@ -221,7 +221,7 @@ void userInput()
 				{
 					msg_twist.linear.x = linear_max;
 				}
-				if (fabs(msg_twist.linear.x) > 1e-3)
+				if (fabs(msg_twist.linear.x) > 1e-3 && fabs(msg_twist.linear.x) < linear_min)
 				{
 					msg_twist.linear.x = linear_min;
 				}
@@ -244,7 +244,7 @@ void userInput()
 				{
 					msg_twist.linear.x = -linear_max;
 				}
-				if (fabs(msg_twist.linear.x) > 1e-3)
+				if (fabs(msg_twist.linear.x) > 1e-3 && fabs(msg_twist.linear.x) < linear_min)
 				{
 					msg_twist.linear.x = -linear_min;
 				}
