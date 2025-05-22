@@ -20,6 +20,7 @@ Changelog:
 #include <termios.h>
 #include <ros/ros.h>
 #include <std_msgs/String.h>
+#include <std_msgs/Bool.h>
 #include <geometry_msgs/Twist.h>
 
 #include <whi_interfaces/WhiEng.h>
@@ -30,7 +31,7 @@ Changelog:
 #include <thread>
 #include <signal.h>
 
-static const char* VERSION = "01.14.2";
+static const char* VERSION = "01.15.1";
 static double linear_min = 0.01;
 static double linear_max = 2.5;
 static double angular_min = 0.1;
@@ -49,6 +50,7 @@ static std::shared_ptr<std::thread> th_handler = nullptr;
 static std::atomic_bool remote_mode = false;
 static std::atomic_bool toggle_estop = false;
 static std::atomic_bool toggle_collision = false;
+static bool sw_estopped = false;
 
 void printInstruction(double Linear, double Angular)
 {
@@ -77,7 +79,7 @@ void subCallbackMotionState(const whi_interfaces::WhiMotionState::ConstPtr& Moti
 		}
 		toggle_estop.store(true);
 	}
-	else if (MotionState->state == whi_interfaces::WhiMotionState::STA_ESTOP_CLEAR)
+	else if (MotionState->state == whi_interfaces::WhiMotionState::STA_STANDBY)
 	{
 		toggle_estop.store(false);
 	}
@@ -99,6 +101,11 @@ void subCallbackMotionState(const whi_interfaces::WhiMotionState::ConstPtr& Moti
 	{
 		toggle_collision.store(false);
 	}
+}
+
+void subCallbackSwEstop(const std_msgs::Bool::ConstPtr& Msg)
+{
+	sw_estopped = Msg->data;
 }
 
 void subCallbackRcState(const whi_interfaces::WhiRcState::ConstPtr& RcState)
@@ -126,7 +133,7 @@ void userInput()
 	while (!terminating.load())
 	{
 		int ch = getchar();
-		if (toggle_estop.load())
+		if (toggle_estop.load() || sw_estopped)
 		{
 			printf("\nE-Stop detected, command is ignored\n");
 			continue;
@@ -486,8 +493,9 @@ int main(int argc, char** argv)
 	// params
 	double frequency = 1.0;
 	node.param(nodeName + "/command_frequency", frequency, 5.0);
-	std::string stateTopic, rcStateTopic;
+	std::string stateTopic, swEstopTopic, rcStateTopic;
 	node.param(nodeName + "/motion_state_topic", stateTopic, std::string(""));
+	node.param(nodeName + "/sw_estop_topic", swEstopTopic, std::string(""));
 	node.param(nodeName + "/rc_state_topic", rcStateTopic, std::string(""));
 	node.param(nodeName + "/linear/min", linear_min, 0.01);
 	node.param(nodeName + "/linear/max", linear_max, 2.5);
@@ -523,6 +531,12 @@ int main(int argc, char** argv)
 	{
 		subMotionState = std::make_unique<ros::Subscriber>(
             node.subscribe<whi_interfaces::WhiMotionState>(stateTopic, 10, subCallbackMotionState));
+	}
+	std::unique_ptr<ros::Subscriber> subSwEstop = nullptr;
+	if (!swEstopTopic.empty())
+	{
+		subSwEstop = std::make_unique<ros::Subscriber>(
+            node.subscribe<std_msgs::Bool>(swEstopTopic, 10, subCallbackSwEstop));
 	}
 	std::unique_ptr<ros::Subscriber> subRcState = nullptr;
 	if (!rcStateTopic.empty())
