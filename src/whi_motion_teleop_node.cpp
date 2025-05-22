@@ -31,7 +31,7 @@ Changelog:
 #include <thread>
 #include <signal.h>
 
-static const char* VERSION = "01.15.1";
+static const char* VERSION = "01.15.2";
 static double linear_min = 0.01;
 static double linear_max = 2.5;
 static double angular_min = 0.1;
@@ -133,20 +133,23 @@ void userInput()
 	while (!terminating.load())
 	{
 		int ch = getchar();
-		if (toggle_estop.load() || sw_estopped)
+		if (ch != 115) // ignore stop command
 		{
-			printf("\nE-Stop detected, command is ignored\n");
-			continue;
-		}
-		else if (toggle_collision.load())
-		{
-			printf("\ncollision detected, command is ignored\n");
-			continue;
-		}
-		else if (remote_mode.load())
-		{
-			printf("\nvehicle is in remote control mode, command is ignored\n");
-			continue;
+			if (toggle_estop.load() || sw_estopped)
+			{
+				printf("\nE-Stop detected, command is ignored\n");
+				continue;
+			}
+			else if (toggle_collision.load())
+			{
+				printf("\ncollision detected, command is ignored\n");
+				continue;
+			}
+			else if (remote_mode.load())
+			{
+				printf("\nvehicle is in remote control mode, command is ignored\n");
+				continue;
+			}
 		}
 
 		switch (ch)
