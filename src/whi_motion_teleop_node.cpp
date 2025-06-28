@@ -17,6 +17,7 @@ Changelog:
 2020-xx-xx: xxx
 ******************************************************************/
 #include <stdio.h>
+#include <unistd.h>
 #include <termios.h>
 #include <ros/ros.h>
 #include <std_msgs/String.h>
