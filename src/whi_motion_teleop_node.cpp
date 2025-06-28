@@ -116,6 +116,7 @@ void subCallbackRcState(const whi_interfaces::msg::WhiRcState::SharedPtr RcState
 			msg_twist.angular.z = 0.0;
 			pub_twist->publish(msg_twist);
 
+			printf("[warn] control was taken over by remote\n");
 			printf("[cmd] linear %.2f, angular %.2f\n", msg_twist.linear.x, msg_twist.angular.z);
 		}
 		remote_mode.store(true);
@@ -126,7 +127,7 @@ void subCallbackRcState(const whi_interfaces::msg::WhiRcState::SharedPtr RcState
 	}
 }
 
-void userInput()
+void userInput(std::shared_ptr<rclcpp::Node>& Node)
 {
 	while (!terminating.load())
 	{
@@ -135,17 +136,17 @@ void userInput()
 		{
 			if (toggle_estop.load() || sw_estopped)
 			{
-				printf("\nE-Stop detected, command is ignored\n");
+				RCLCPP_WARN(Node->get_logger(), "E-Stop detected, command is ignored");
 				continue;
 			}
 			else if (toggle_collision.load())
 			{
-				printf("\ncollision detected, command is ignored\n");
+				RCLCPP_WARN(Node->get_logger(), "collision detected, command is ignored");
 				continue;
 			}
 			else if (remote_mode.load())
 			{
-				printf("\nvehicle is in remote control mode, command is ignored\n");
+				RCLCPP_WARN(Node->get_logger(), "vehicle is in remote control mode, command is ignored");
 				continue;
 			}
 		}
@@ -157,8 +158,8 @@ void userInput()
 			// stop
 			if (cal_initiated)
 			{
-				printf("[engineering] please specify direction:\n");
-				printf("[engineering] + counter-clock, - clock\n");
+				RCLCPP_INFO(Node->get_logger(), "please specify direction:");
+				RCLCPP_INFO(Node->get_logger(), "+ counter-clock, - clock");
 			}
 			else
 			{
@@ -166,15 +167,15 @@ void userInput()
 				msg_twist.angular.z = 0.0;
 				pub_twist->publish(msg_twist);
 
-				printf("[cmd] linear %.2f, angular %.2f\n", msg_twist.linear.x, msg_twist.angular.z);
+				RCLCPP_INFO(Node->get_logger(), "linear %.2f, angular %.2f\n", msg_twist.linear.x, msg_twist.angular.z);
 			}
 			break;
 		case 97: // a
 			// left
 			if (cal_initiated)
 			{
-				printf("[engineering] please specify direction:\n");
-				printf("[engineering] + counter-clock, - clock\n");
+				RCLCPP_INFO(Node->get_logger(), "please specify direction:");
+				RCLCPP_INFO(Node->get_logger(), "+ counter-clock, - clock");
 			}
 			else
 			{
@@ -197,15 +198,15 @@ void userInput()
 				}
 				pub_twist->publish(msg_twist);
 
-				printf("[cmd] linear %.2f, angular %.2f\n", msg_twist.linear.x, msg_twist.angular.z);
+				RCLCPP_INFO(Node->get_logger(), "linear %.2f, angular %.2f\n", msg_twist.linear.x, msg_twist.angular.z);
 			}
 			break;
 		case 100: // d
 			// right
 			if (cal_initiated)
 			{
-				printf("[engineering] please specify direction:\n");
-				printf("[engineering] + counter-clock, - clock\n");
+				RCLCPP_INFO(Node->get_logger(), "please specify direction:");
+				RCLCPP_INFO(Node->get_logger(), "+ counter-clock, - clock");
 			}
 			else
 			{
@@ -228,15 +229,15 @@ void userInput()
 				}
 				pub_twist->publish(msg_twist);
 
-				printf("[cmd] linear %.2f, angular %.2f\n", msg_twist.linear.x, msg_twist.angular.z);
+				RCLCPP_INFO(Node->get_logger(), "linear %.2f, angular %.2f\n", msg_twist.linear.x, msg_twist.angular.z);
 			}
 			break;
 		case 119: // w
 			// forward
 			if (cal_initiated)
 			{
-				printf("[engineering] please specify direction:\n");
-				printf("[engineering] + counter-clock, - clock\n");
+				RCLCPP_INFO(Node->get_logger(), "please specify direction:");
+				RCLCPP_INFO(Node->get_logger(), "+ counter-clock, - clock");
 			}
 			else
 			{
@@ -259,15 +260,15 @@ void userInput()
 				}
 				pub_twist->publish(msg_twist);
 
-				printf("[cmd] linear %.2f, angular %.2f\n", msg_twist.linear.x, msg_twist.angular.z);
+				RCLCPP_INFO(Node->get_logger(), "linear %.2f, angular %.2f\n", msg_twist.linear.x, msg_twist.angular.z);
 			}
 			break;
 		case 120: // x
 			// backward
 			if (cal_initiated)
 			{
-				printf("[engineering] please specify direction:\n");
-				printf("[engineering] + counter-clock, - clock\n");
+				RCLCPP_INFO(Node->get_logger(), "please specify direction:");
+				RCLCPP_INFO(Node->get_logger(), "+ counter-clock, - clock");
 			}
 			else
 			{
@@ -289,7 +290,7 @@ void userInput()
 					msg_twist.linear.x = 0.0;
 				}
 				
-				printf("[cmd] linear %.2f, angular %.2f\n", msg_twist.linear.x, msg_twist.angular.z);
+				RCLCPP_INFO(Node->get_logger(), "linear %.2f, angular %.2f\n", msg_twist.linear.x, msg_twist.angular.z);
 			}
 			break;
 		case 99: // c
@@ -304,25 +305,25 @@ void userInput()
 			cal_initiated = false;
 			pub_eng->publish(msg_eng);
 
-			printf("[engineering] eng all neutralized\n");
+			RCLCPP_INFO(Node->get_logger(), "eng all neutralized");
 			break;
 		case 51: // 3: print imu
 			if (cal_initiated)
 			{
-				printf("[engineering] please specify direction:\n");
-				printf("[engineering] + counter-clock, - clock\n");
+				RCLCPP_INFO(Node->get_logger(), "please specify direction:");
+				RCLCPP_INFO(Node->get_logger(), "+ counter-clock, - clock");
 			}
 			else
 			{
 				if (msg_eng.eng_flag & 0b00000100)
 				{
-					printf("[engineering] printf imu off\n");
+					RCLCPP_INFO(Node->get_logger(), "print imu off");
 					msg_eng.eng_flag &= ~0b00000100;
 					msg_eng.eng_flag |= 0b00000001;
 				}
 				else
 				{
-					printf("[engineering] printf imu\n");
+					RCLCPP_INFO(Node->get_logger(), "print imu on");
 					msg_eng.eng_flag &= ~0b00000001;
 					msg_eng.eng_flag |= 0b00000100;
 				}
@@ -332,8 +333,8 @@ void userInput()
 		case 52: // 4: reset imu
 			if (cal_initiated)
 			{
-				printf("[engineering] please specify direction:\n");
-				printf("[engineering] + counter-clock, - clock\n");
+				RCLCPP_INFO(Node->get_logger(), "please specify direction:");
+				RCLCPP_INFO(Node->get_logger(), "+ counter-clock, - clock");
 			}
 			else
 			{
@@ -341,26 +342,26 @@ void userInput()
 				pub_eng->publish(msg_eng);
 				msg_eng.eng_flag &= ~0b00001000;
 
-				printf("[engineering] reset imu\n");
+				RCLCPP_INFO(Node->get_logger(), "reset imu");
 			}
 			break;
 		case 53: // 5: print enc
 			if (cal_initiated)
 			{
-				printf("[engineering] please specify direction:\n");
-				printf("[engineering] + counter-clock, - clock\n");
+				RCLCPP_INFO(Node->get_logger(), "please specify direction:");
+				RCLCPP_INFO(Node->get_logger(), "+ counter-clock, - clock");
 			}
 			else
 			{
 				if (msg_eng.eng_flag & 0b00010000)
 				{
-					printf("[engineering] print incoder off\n");
+					RCLCPP_INFO(Node->get_logger(), "print incoder off");
 					msg_eng.eng_flag &= ~0b00010000;
 					msg_eng.eng_flag |= 0b00000010;
 				}
 				else
 				{
-					printf("[engineering] print incoder\n");
+					RCLCPP_INFO(Node->get_logger(), "print incoder on");
 					msg_eng.eng_flag &= ~0b00000010;
 					msg_eng.eng_flag |= 0b00010000;
 				}
@@ -370,8 +371,8 @@ void userInput()
 		case 54: // 6: reset enc
 			if (cal_initiated)
 			{
-				printf("[engineering] please specify direction:\n");
-				printf("[engineering] + counter-clock, - clock\n");
+				RCLCPP_INFO(Node->get_logger(), "please specify direction:");
+				RCLCPP_INFO(Node->get_logger(), "+ counter-clock, - clock");
 			}
 			else
 			{
@@ -379,14 +380,14 @@ void userInput()
 				pub_eng->publish(msg_eng);
 				msg_eng.eng_flag &= ~0b00100000;
 
-				printf("[engineering] reset encoder\n");
+				RCLCPP_INFO(Node->get_logger(), "reset encoder");
 			}
 			break;
 		case 55: // 7: build lookup
 			if (cal_initiated)
 			{
-				printf("[engineering] please specify direction:\n");
-				printf("[engineering] + counter-clock, - clock\n");
+				RCLCPP_INFO(Node->get_logger(), "please specify direction:");
+				RCLCPP_INFO(Node->get_logger(), "+ counter-clock, - clock");
 			}
 			else
 			{
@@ -394,14 +395,14 @@ void userInput()
 				pub_eng->publish(msg_eng);
 				msg_eng.eng_flag &= ~0b01000000;
 
-				printf("[engineering] build lookup\n");
+				RCLCPP_INFO(Node->get_logger(), "build lookup");
 			}
 			break;
 		case 56: // 8: clear lookup
 			if (cal_initiated)
 			{
-				printf("[engineering] please specify direction:\n");
-				printf("[engineering] + counter-clock, - clock\n");
+				RCLCPP_INFO(Node->get_logger(), "please specify direction:");
+				RCLCPP_INFO(Node->get_logger(), "+ counter-clock, - clock");
 			}
 			else
 			{
@@ -409,14 +410,14 @@ void userInput()
 				pub_eng->publish(msg_eng);
 				msg_eng.eng_flag &= ~0b10000000;
 
-				printf("[engineering] clear built lookup\n");
+				RCLCPP_INFO(Node->get_logger(), "clear built lookup");
 			}
 			break;
 		case 57: // 9: diameter compensation calibration
 			cal_initiated = true;
 
-			printf("[engineering] start diameter compensation calibration, please specify direction:\n");
-			printf("[engineering] + counter-clock, - clock\n");
+			RCLCPP_INFO(Node->get_logger(), "start diameter compensation calibration, please specify direction:");
+			RCLCPP_INFO(Node->get_logger(), "+ counter-clock, - clock");
 			break;
 		case 45: // -: clockwise
 			if (cal_initiated)
@@ -427,7 +428,7 @@ void userInput()
 
 				cal_initiated = false;
 
-				printf("[engineering] diameter compensation calibration: clockwise\n");
+				RCLCPP_INFO(Node->get_logger(), "diameter compensation calibration: clockwise");
 				break;
 			}
 		case 43: // +: counter-clockwise
@@ -439,18 +440,18 @@ void userInput()
 
 				cal_initiated = false;
 
-				printf("[engineering] diameter compensation calibration: counter-clockwise\n");
+				RCLCPP_INFO(Node->get_logger(), "diameter compensation calibration: counter-clockwise");
 				break;
 			}
 		default:
 			if (cal_initiated)
 			{
-				printf("[engineering] please specify direction:\n");
-				printf("[engineering] + counter-clock, - clock\n");
+				RCLCPP_INFO(Node->get_logger(), "please specify direction:");
+				RCLCPP_INFO(Node->get_logger(), "+ counter-clock, - clock");
 			}
 			else
 			{
-				printf("[warn] unrecognized command. using following commands:\n");
+				RCLCPP_INFO(Node->get_logger(), "unrecognized command. using following commands");
 				printInstruction(msg_twist.linear.x, msg_twist.angular.z);
 			}
 			break;
@@ -559,7 +560,7 @@ int main(int argc, char** argv)
 	pub_rc_state = node->create_publisher<whi_interfaces::msg::WhiRcState>(rcStateTopic, 50);
 
 	// spawn a thread to fresh publication
-	th_handler = std::make_shared<std::thread>(userInput);
+	th_handler = std::make_shared<std::thread>(userInput, std::ref(node));
 
 	auto loopPub = [&]()
 	{
