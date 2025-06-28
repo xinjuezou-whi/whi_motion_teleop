@@ -19,20 +19,19 @@ Changelog:
 #include <stdio.h>
 #include <unistd.h>
 #include <termios.h>
-#include <ros/ros.h>
-#include <std_msgs/String.h>
-#include <std_msgs/Bool.h>
-#include <geometry_msgs/Twist.h>
+#include <rclcpp/rclcpp.hpp>
+#include <std_msgs/msg/bool.hpp>
+#include <geometry_msgs/msg/twist.hpp>
 
-#include <whi_interfaces/WhiEng.h>
-#include <whi_interfaces/WhiMotionState.h>
-#include <whi_interfaces/WhiRcState.h>
+#include <whi_interfaces/msg/whi_eng.hpp>
+#include <whi_interfaces/msg/whi_motion_state.hpp>
+#include <whi_interfaces/msg/whi_rc_state.hpp>
 
 #include <string>
 #include <thread>
 #include <signal.h>
 
-static const char* VERSION = "01.15.2";
+static const char* VERSION = "02.15.2";
 static double linear_min = 0.01;
 static double linear_max = 2.5;
 static double angular_min = 0.1;
@@ -40,11 +39,11 @@ static double angular_max = 1.6;
 static double step_linear = 0.01;
 static double step_angular = 0.1;
 static bool cal_initiated = false;
-static std::shared_ptr<ros::Publisher> pub_twist = nullptr;
-static std::shared_ptr<ros::Publisher> pub_eng = nullptr;
-static std::shared_ptr<ros::Publisher> pub_rc_state = nullptr;
-static geometry_msgs::Twist msg_twist;
-static whi_interfaces::WhiEng msg_eng;
+static rclcpp::Publisher<geometry_msgs::msg::Twist>::SharedPtr pub_twist;
+static rclcpp::Publisher<whi_interfaces::msg::WhiEng>::SharedPtr pub_eng;
+static rclcpp::Publisher<whi_interfaces::msg::WhiRcState>::SharedPtr pub_rc_state;
+static geometry_msgs::msg::Twist msg_twist;
+static whi_interfaces::msg::WhiEng msg_eng;
 static struct termios old_tio;
 static std::atomic_bool terminating = false;
 static std::shared_ptr<std::thread> th_handler = nullptr;
@@ -55,19 +54,17 @@ static bool sw_estopped = false;
 
 void printInstruction(double Linear, double Angular)
 {
-	printf("\n");
-	printf("           w - forward\n");
-	printf("a - left   s - stop      d - right\n");
-	printf("           x - backward\n");
-	printf("\n");
-	printf("c - clear AMR error\n");
-	printf("\n");
-	printf("linear %.2f, angular %.2f\n", Linear, Angular);
+	std::cout << "\n" << std::endl;
+	std::cout << "           w - forward" << std::endl;
+	std::cout << "a - left   s - stop      d - right" << std::endl;
+	std::cout << "           x - backward\n" << std::endl;
+	std::cout << "c - clear AMR error\n" << std::endl;
+	std::cout << "linear: " << Linear << " angular: " << Angular << std::endl;
 }
 
-void subCallbackMotionState(const whi_interfaces::WhiMotionState::ConstPtr& MotionState)
+void subCallbackMotionState(const whi_interfaces::msg::WhiMotionState::SharedPtr MotionState)
 {
-	if (MotionState->state == whi_interfaces::WhiMotionState::STA_ESTOP)
+	if (MotionState->state == whi_interfaces::msg::WhiMotionState::STA_ESTOP)
 	{
 		msg_twist.linear.x = 0.0;
 		msg_twist.angular.z = 0.0;
@@ -80,12 +77,12 @@ void subCallbackMotionState(const whi_interfaces::WhiMotionState::ConstPtr& Moti
 		}
 		toggle_estop.store(true);
 	}
-	else if (MotionState->state == whi_interfaces::WhiMotionState::STA_STANDBY)
+	else if (MotionState->state == whi_interfaces::msg::WhiMotionState::STA_STANDBY)
 	{
 		toggle_estop.store(false);
 	}
 
-	if (MotionState->state == whi_interfaces::WhiMotionState::STA_CRITICAL_COLLISION)
+	if (MotionState->state == whi_interfaces::msg::WhiMotionState::STA_CRITICAL_COLLISION)
 	{
 		msg_twist.linear.x = 0.0;
 		msg_twist.angular.z = 0.0;
@@ -98,20 +95,20 @@ void subCallbackMotionState(const whi_interfaces::WhiMotionState::ConstPtr& Moti
 		}
 		toggle_collision.store(true);
 	}
-	else if (MotionState->state == whi_interfaces::WhiMotionState::STA_CRITICAL_COLLISION_CLEAR)
+	else if (MotionState->state == whi_interfaces::msg::WhiMotionState::STA_CRITICAL_COLLISION_CLEAR)
 	{
 		toggle_collision.store(false);
 	}
 }
 
-void subCallbackSwEstop(const std_msgs::Bool::ConstPtr& Msg)
+void subCallbackSwEstop(const std_msgs::msg::Bool::SharedPtr Msg)
 {
 	sw_estopped = Msg->data;
 }
 
-void subCallbackRcState(const whi_interfaces::WhiRcState::ConstPtr& RcState)
+void subCallbackRcState(const whi_interfaces::msg::WhiRcState::SharedPtr RcState)
 {
-	if (RcState->state == whi_interfaces::WhiRcState::STA_REMOTE)
+	if (RcState->state == whi_interfaces::msg::WhiRcState::STA_REMOTE)
 	{
 		if (!remote_mode.load())
 		{
@@ -123,7 +120,7 @@ void subCallbackRcState(const whi_interfaces::WhiRcState::ConstPtr& RcState)
 		}
 		remote_mode.store(true);
 	}
-	else if (RcState->state == whi_interfaces::WhiRcState::STA_AUTO)
+	else if (RcState->state == whi_interfaces::msg::WhiRcState::STA_AUTO)
 	{
 		remote_mode.store(false);
 	}
@@ -297,8 +294,8 @@ void userInput()
 			break;
 		case 99: // c
 			{
-				whi_interfaces::WhiRcState msgState;
-                msgState.state = whi_interfaces::WhiRcState::STA_CLEAR_FAULT;
+				whi_interfaces::msg::WhiRcState msgState;
+                msgState.state = whi_interfaces::msg::WhiRcState::STA_CLEAR_FAULT;
                 pub_rc_state->publish(msgState);
 			}
 			break;
@@ -480,33 +477,42 @@ void sigintHandler(int sig)
 	th_handler->join();
  
 	// All the default sigint handler does is call shutdown()
-	ros::shutdown();
+	rclcpp::shutdown();
 }
 
 int main(int argc, char** argv)
 {
-	std::string nodeName("whi_motion_teleop");
-	ros::init(argc, argv, nodeName);
+	rclcpp::init(argc, argv);
 
-	ros::NodeHandle node;
+	auto node = std::make_shared<rclcpp::Node>("whi_motion_teleop");
 
 	// Override the default ros sigint handler.
-	// This must be set after the first NodeHandle is created.
+	// This must be set after the first Node is created.
 	signal(SIGINT, sigintHandler);
 
 	// params
 	double frequency = 1.0;
-	node.param(nodeName + "/command_frequency", frequency, 5.0);
+	node->declare_parameter("command_frequency", 5.0);
+	node->get_parameter("command_frequency", frequency);
 	std::string stateTopic, swEstopTopic, rcStateTopic;
-	node.param(nodeName + "/motion_state_topic", stateTopic, std::string(""));
-	node.param(nodeName + "/sw_estop_topic", swEstopTopic, std::string(""));
-	node.param(nodeName + "/rc_state_topic", rcStateTopic, std::string(""));
-	node.param(nodeName + "/linear/min", linear_min, 0.01);
-	node.param(nodeName + "/linear/max", linear_max, 2.5);
-	node.param(nodeName + "/linear/step", step_linear, 0.01);
-	node.param(nodeName + "/angular/min", angular_min, 0.1);
-	node.param(nodeName + "/angular/max", angular_max, 1.6);
-	node.param(nodeName + "/angular/step", step_angular, 0.1);
+	node->declare_parameter("motion_state_topic", std::string("motion_state"));
+	node->get_parameter("motion_state_topic", stateTopic);
+	node->declare_parameter("sw_estop_topic", std::string("estop"));
+	node->get_parameter("sw_estop_topic", swEstopTopic);
+	node->declare_parameter("rc_state_topic", std::string("rc_state"));
+	node->get_parameter("rc_state_topic", rcStateTopic);
+	node->declare_parameter("linear.min", 0.01);
+	node->get_parameter("linear.min", linear_min);
+	node->declare_parameter("linear.max", 2.5);
+	node->get_parameter("linear.max", linear_max);
+	node->declare_parameter("linear.step", 0.01);
+	node->get_parameter("linear.step", step_linear);
+	node->declare_parameter("angular.min", 0.1);
+	node->get_parameter("angular.min", angular_min);
+	node->declare_parameter("angular.max", 1.6);
+	node->get_parameter("angular.max", angular_max);
+	node->declare_parameter("angular.step", 0.1);
+	node->get_parameter("angular.step", step_angular);
 	linear_min = abs(linear_min);
 	linear_max = abs(linear_max);
 	step_linear = abs(step_linear);
@@ -523,50 +529,50 @@ int main(int argc, char** argv)
 	/* set the new settings immediately */
 	tcsetattr(STDIN_FILENO, TCSANOW, &newTio);
 
-	printf("\n");
-	printf("TELEOP VERSION %s\n", VERSION);
-	printf("Copyright © 2018-2025 Wheel Hub Intelligent Co.,Ltd. All rights reserved\n\n");
-	printf("set linear range: %.2f to %.2f, step: %.2f\n", linear_min, linear_max, step_linear);
-	printf("set angular range: %.2f to %.2f, step: %.2f\n", angular_min, angular_max, step_angular);
+	std::cout << "\nTELEOP VERSION " << VERSION << std::endl;
+	std::cout << "Copyright © 2018-2025 Wheel Hub Intelligent Co.,Ltd. All rights reserved\n" << std::endl;
+	std::cout << "set linear range: [" << linear_min << ", " << linear_max << "], step: " << step_linear << std::endl;
+	std::cout << "set angular range: [" << angular_min << ", " << angular_max << "], step: " << step_angular << std::endl;
 	printInstruction(0.0, 0.0);
 
-	std::unique_ptr<ros::Subscriber> subMotionState = nullptr;
+	rclcpp::Subscription<whi_interfaces::msg::WhiMotionState>::SharedPtr subMotionState;
 	if (!stateTopic.empty())
 	{
-		subMotionState = std::make_unique<ros::Subscriber>(
-            node.subscribe<whi_interfaces::WhiMotionState>(stateTopic, 10, subCallbackMotionState));
+      	subMotionState = node->create_subscription<whi_interfaces::msg::WhiMotionState>(
+      		stateTopic, 10, subCallbackMotionState);
 	}
-	std::unique_ptr<ros::Subscriber> subSwEstop = nullptr;
+	rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr subSwEstop;
 	if (!swEstopTopic.empty())
 	{
-		subSwEstop = std::make_unique<ros::Subscriber>(
-            node.subscribe<std_msgs::Bool>(swEstopTopic, 10, subCallbackSwEstop));
+      	subSwEstop = node->create_subscription<std_msgs::msg::Bool>(
+      		swEstopTopic, 10, subCallbackSwEstop);
 	}
-	std::unique_ptr<ros::Subscriber> subRcState = nullptr;
+	rclcpp::Subscription<whi_interfaces::msg::WhiRcState>::SharedPtr subRcState;
 	if (!rcStateTopic.empty())
 	{
-		subRcState = std::make_unique<ros::Subscriber>(
-            node.subscribe<whi_interfaces::WhiRcState>(rcStateTopic, 10, subCallbackRcState));
+      	subRcState = node->create_subscription<whi_interfaces::msg::WhiRcState>(
+      		rcStateTopic, 10, subCallbackRcState);
 	}
 
-	pub_twist = std::make_shared<ros::Publisher>(node.advertise<geometry_msgs::Twist>("cmd_vel", 50));
-	pub_eng = std::make_shared<ros::Publisher>(node.advertise<whi_interfaces::WhiEng>("eng", 50));
-    pub_rc_state = std::make_unique<ros::Publisher>(node.advertise<whi_interfaces::WhiRcState>(rcStateTopic, 50));        
+	pub_twist = node->create_publisher<geometry_msgs::msg::Twist>("cmd_vel", 50);
+	pub_eng = node->create_publisher<whi_interfaces::msg::WhiEng>("eng", 50);
+	pub_rc_state = node->create_publisher<whi_interfaces::msg::WhiRcState>(rcStateTopic, 50);
 
 	// spawn a thread to fresh publication
 	th_handler = std::make_shared<std::thread>(userInput);
-	
-	ros::Rate loopRate(frequency);
-	while (node.ok())
+
+	auto loopPub = [&]()
 	{
 		if (!remote_mode.load())
 		{
 			pub_twist->publish(msg_twist);
 		}
+	};
 
-		ros::spinOnce();
-		loopRate.sleep();
-	}
+	auto period = std::chrono::duration<double>(1.0 / frequency);
+	auto timer = node->create_wall_timer(period, loopPub);
+
+	rclcpp::spin(node);
 
 	return 0;
 }

@@ -23,14 +23,17 @@ git clone https://github.com/xinjuezou-whi/whi_interfaces.git
 ## Params
 ```
 whi_motion_teleop:
-  command_frequency: 20 # Hz
-  motion_state_topic: motion_state
-  linear: # m/s
-    min: 0.08
-    max: 0.3
-    step: 0.01 
-  angular: # rad/s
-    min: 0.1
-    max: 1.0
-    step: 0.1
+  ros__parameters:
+    command_frequency: 20.0  # Hz
+    motion_state_topic: NaviBOT/motion_state
+    sw_estop_topic: estop
+    rc_state_topic: rc_state
+    linear:
+      min: 0.08
+      max: 0.3
+      step: 0.01
+    angular:
+      min: 0.1
+      max: 1.0
+      step: 0.05
 ```
