@@ -37,3 +37,8 @@ whi_motion_teleop:
       max: 1.0
       step: 0.05
 ```
+
+## Running
+```
+ros2 run whi_motion_teleop whi_motion_teleop_node --ros-args --params-file /home/nvidia/ros2_ws/src/whi_motion_teleop/config/config.yaml 
+```
