@@ -28,7 +28,6 @@ find_package(whi_interfaces REQUIRED)
 ## Your package locations should be listed before other locations
 include_directories(
   include
-  ${catkin_INCLUDE_DIRS}
 )
 
 ## Declare a C++ library
