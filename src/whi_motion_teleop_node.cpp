@@ -31,7 +31,7 @@ Changelog:
 #include <thread>
 #include <signal.h>
 
-static const char* VERSION = "02.15.2";
+static const char* VERSION = "02.15.3";
 static double linear_min = 0.01;
 static double linear_max = 2.5;
 static double angular_min = 0.1;
@@ -555,7 +555,7 @@ int main(int argc, char** argv)
       		rcStateTopic, 10, subCallbackRcState);
 	}
 
-	pub_twist = node->create_publisher<geometry_msgs::msg::Twist>("cmd_vel", 50);
+	pub_twist = node->create_publisher<geometry_msgs::msg::Twist>("cmd_vel_unstamped", 50);
 	pub_eng = node->create_publisher<whi_interfaces::msg::WhiEng>("eng", 50);
 	pub_rc_state = node->create_publisher<whi_interfaces::msg::WhiRcState>(rcStateTopic, 50);
 
