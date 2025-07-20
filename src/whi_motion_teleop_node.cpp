@@ -21,7 +21,7 @@ Changelog:
 #include <termios.h>
 #include <rclcpp/rclcpp.hpp>
 #include <std_msgs/msg/bool.hpp>
-#include <geometry_msgs/msg/twist.hpp>
+#include <geometry_msgs/msg/twist_stamped.hpp>
 
 #include <whi_interfaces/msg/whi_eng.hpp>
 #include <whi_interfaces/msg/whi_motion_state.hpp>
@@ -30,8 +30,9 @@ Changelog:
 #include <string>
 #include <thread>
 #include <signal.h>
+#include <functional>
 
-static const char* VERSION = "02.15.3";
+static const char* VERSION = "02.16.1";
 static double linear_min = 0.01;
 static double linear_max = 2.5;
 static double angular_min = 0.1;
@@ -39,10 +40,11 @@ static double angular_max = 1.6;
 static double step_linear = 0.01;
 static double step_angular = 0.1;
 static bool cal_initiated = false;
-static rclcpp::Publisher<geometry_msgs::msg::Twist>::SharedPtr pub_twist;
+using Twist = geometry_msgs::msg::TwistStamped;
+static rclcpp::Publisher<Twist>::SharedPtr pub_twist;
 static rclcpp::Publisher<whi_interfaces::msg::WhiEng>::SharedPtr pub_eng;
 static rclcpp::Publisher<whi_interfaces::msg::WhiRcState>::SharedPtr pub_rc_state;
-static geometry_msgs::msg::Twist msg_twist;
+static Twist msg_twist;
 static whi_interfaces::msg::WhiEng msg_eng;
 static struct termios old_tio;
 static std::atomic_bool terminating = false;
@@ -66,14 +68,14 @@ void subCallbackMotionState(const whi_interfaces::msg::WhiMotionState::SharedPtr
 {
 	if (MotionState->state == whi_interfaces::msg::WhiMotionState::STA_ESTOP)
 	{
-		msg_twist.linear.x = 0.0;
-		msg_twist.angular.z = 0.0;
+		msg_twist.twist.linear.x = 0.0;
+		msg_twist.twist.angular.z = 0.0;
 		pub_twist->publish(msg_twist);
 
 		if (!toggle_estop.load())
 		{
 			printf("[warn] E-Stop detected\n");
-			printf("[cmd] linear %.2f, angular %.2f\n", msg_twist.linear.x, msg_twist.angular.z);
+			printf("[cmd] linear %.2f, angular %.2f\n", msg_twist.twist.linear.x, msg_twist.twist.angular.z);
 		}
 		toggle_estop.store(true);
 	}
@@ -84,14 +86,14 @@ void subCallbackMotionState(const whi_interfaces::msg::WhiMotionState::SharedPtr
 
 	if (MotionState->state == whi_interfaces::msg::WhiMotionState::STA_CRITICAL_COLLISION)
 	{
-		msg_twist.linear.x = 0.0;
-		msg_twist.angular.z = 0.0;
+		msg_twist.twist.linear.x = 0.0;
+		msg_twist.twist.angular.z = 0.0;
 		pub_twist->publish(msg_twist);
 
 		if (!toggle_collision.load())
 		{
 			printf("[warn] collision detected\n");
-			printf("[cmd] linear %.2f, angular %.2f\n", msg_twist.linear.x, msg_twist.angular.z);
+			printf("[cmd] linear %.2f, angular %.2f\n", msg_twist.twist.linear.x, msg_twist.twist.angular.z);
 		}
 		toggle_collision.store(true);
 	}
@@ -112,12 +114,12 @@ void subCallbackRcState(const whi_interfaces::msg::WhiRcState::SharedPtr RcState
 	{
 		if (!remote_mode.load())
 		{
-			msg_twist.linear.x = 0.0;
-			msg_twist.angular.z = 0.0;
+			msg_twist.twist.linear.x = 0.0;
+			msg_twist.twist.angular.z = 0.0;
 			pub_twist->publish(msg_twist);
 
 			printf("[warn] control was taken over by remote\n");
-			printf("[cmd] linear %.2f, angular %.2f\n", msg_twist.linear.x, msg_twist.angular.z);
+			printf("[cmd] linear %.2f, angular %.2f\n", msg_twist.twist.linear.x, msg_twist.twist.angular.z);
 		}
 		remote_mode.store(true);
 	}
@@ -151,6 +153,8 @@ void userInput(std::shared_ptr<rclcpp::Node>& Node)
 			}
 		}
 
+		auto currentTime = Node->get_clock()->now();
+		msg_twist.header.stamp = currentTime;
 		switch (ch)
 		{
 		case 32: // s
@@ -163,11 +167,12 @@ void userInput(std::shared_ptr<rclcpp::Node>& Node)
 			}
 			else
 			{
-				msg_twist.linear.x = 0.0;
-				msg_twist.angular.z = 0.0;
+				msg_twist.twist.linear.x = 0.0;
+				msg_twist.twist.angular.z = 0.0;
 				pub_twist->publish(msg_twist);
 
-				RCLCPP_INFO(Node->get_logger(), "linear %.2f, angular %.2f\n", msg_twist.linear.x, msg_twist.angular.z);
+				RCLCPP_INFO(Node->get_logger(), "linear %.2f, angular %.2f\n",
+					msg_twist.twist.linear.x, msg_twist.twist.angular.z);
 			}
 			break;
 		case 97: // a
@@ -179,26 +184,27 @@ void userInput(std::shared_ptr<rclcpp::Node>& Node)
 			}
 			else
 			{
-				if (fabs(msg_twist.angular.z) < 1e-5)
+				if (fabs(msg_twist.twist.angular.z) < 1e-5)
 				{
-					msg_twist.angular.z = angular_min;
+					msg_twist.twist.angular.z = angular_min;
 				}
 				else
 				{
-					msg_twist.angular.z += step_angular;
+					msg_twist.twist.angular.z += step_angular;
 				}
 
-				if (msg_twist.angular.z > angular_max)
+				if (msg_twist.twist.angular.z > angular_max)
 				{
-					msg_twist.angular.z = angular_max;
+					msg_twist.twist.angular.z = angular_max;
 				}
-				if (fabs(msg_twist.angular.z) < angular_min)
+				if (fabs(msg_twist.twist.angular.z) < angular_min)
 				{
-					msg_twist.angular.z = 0.0;
+					msg_twist.twist.angular.z = 0.0;
 				}
 				pub_twist->publish(msg_twist);
 
-				RCLCPP_INFO(Node->get_logger(), "linear %.2f, angular %.2f\n", msg_twist.linear.x, msg_twist.angular.z);
+				RCLCPP_INFO(Node->get_logger(), "linear %.2f, angular %.2f\n",
+					msg_twist.twist.linear.x, msg_twist.twist.angular.z);
 			}
 			break;
 		case 100: // d
@@ -210,26 +216,27 @@ void userInput(std::shared_ptr<rclcpp::Node>& Node)
 			}
 			else
 			{
-				if (fabs(msg_twist.angular.z) < 1e-5)
+				if (fabs(msg_twist.twist.angular.z) < 1e-5)
 				{
-					msg_twist.angular.z = -angular_min;
+					msg_twist.twist.angular.z = -angular_min;
 				}
 				else
 				{
-					msg_twist.angular.z -= step_angular;
+					msg_twist.twist.angular.z -= step_angular;
 				}
 
-				if (msg_twist.angular.z < -angular_max)
+				if (msg_twist.twist.angular.z < -angular_max)
 				{
-					msg_twist.angular.z = -angular_max;
+					msg_twist.twist.angular.z = -angular_max;
 				}
-				if (fabs(msg_twist.angular.z) < angular_min)
+				if (fabs(msg_twist.twist.angular.z) < angular_min)
 				{
-					msg_twist.angular.z = 0.0;
+					msg_twist.twist.angular.z = 0.0;
 				}
 				pub_twist->publish(msg_twist);
 
-				RCLCPP_INFO(Node->get_logger(), "linear %.2f, angular %.2f\n", msg_twist.linear.x, msg_twist.angular.z);
+				RCLCPP_INFO(Node->get_logger(), "linear %.2f, angular %.2f\n",
+					msg_twist.twist.linear.x, msg_twist.twist.angular.z);
 			}
 			break;
 		case 119: // w
@@ -241,26 +248,27 @@ void userInput(std::shared_ptr<rclcpp::Node>& Node)
 			}
 			else
 			{
-				if (fabs(msg_twist.linear.x) < 1e-5)
+				if (fabs(msg_twist.twist.linear.x) < 1e-5)
 				{
-					msg_twist.linear.x = linear_min;
+					msg_twist.twist.linear.x = linear_min;
 				}
 				else
 				{
-					msg_twist.linear.x += step_linear;
+					msg_twist.twist.linear.x += step_linear;
 				}
 				
-				if (msg_twist.linear.x > linear_max)
+				if (msg_twist.twist.linear.x > linear_max)
 				{
-					msg_twist.linear.x = linear_max;
+					msg_twist.twist.linear.x = linear_max;
 				}
-				if (fabs(msg_twist.linear.x) < linear_min)
+				if (fabs(msg_twist.twist.linear.x) < linear_min)
 				{
-					msg_twist.linear.x = 0.0;
+					msg_twist.twist.linear.x = 0.0;
 				}
 				pub_twist->publish(msg_twist);
 
-				RCLCPP_INFO(Node->get_logger(), "linear %.2f, angular %.2f\n", msg_twist.linear.x, msg_twist.angular.z);
+				RCLCPP_INFO(Node->get_logger(), "linear %.2f, angular %.2f\n",
+					msg_twist.twist.linear.x, msg_twist.twist.angular.z);
 			}
 			break;
 		case 120: // x
@@ -272,30 +280,33 @@ void userInput(std::shared_ptr<rclcpp::Node>& Node)
 			}
 			else
 			{
-				if (fabs(msg_twist.linear.x) < 1e-5)
+				if (fabs(msg_twist.twist.linear.x) < 1e-5)
 				{
-					msg_twist.linear.x = -linear_min;
+					msg_twist.twist.linear.x = -linear_min;
 				}
 				else
 				{
-					msg_twist.linear.x -= step_linear;
+					msg_twist.twist.linear.x -= step_linear;
 				}
 
-				if (msg_twist.linear.x < -linear_max)
+				if (msg_twist.twist.linear.x < -linear_max)
 				{
-					msg_twist.linear.x = -linear_max;
+					msg_twist.twist.linear.x = -linear_max;
 				}
-				if (fabs(msg_twist.linear.x) < linear_min)
+				if (fabs(msg_twist.twist.linear.x) < linear_min)
 				{
-					msg_twist.linear.x = 0.0;
+					msg_twist.twist.linear.x = 0.0;
 				}
+				pub_twist->publish(msg_twist);
 				
-				RCLCPP_INFO(Node->get_logger(), "linear %.2f, angular %.2f\n", msg_twist.linear.x, msg_twist.angular.z);
+				RCLCPP_INFO(Node->get_logger(), "linear %.2f, angular %.2f\n",
+					msg_twist.twist.linear.x, msg_twist.twist.angular.z);
 			}
 			break;
 		case 99: // c
 			{
 				whi_interfaces::msg::WhiRcState msgState;
+				msgState.header.stamp = currentTime;
                 msgState.state = whi_interfaces::msg::WhiRcState::STA_CLEAR_FAULT;
                 pub_rc_state->publish(msgState);
 			}
@@ -452,7 +463,7 @@ void userInput(std::shared_ptr<rclcpp::Node>& Node)
 			else
 			{
 				RCLCPP_INFO(Node->get_logger(), "unrecognized command. using following commands");
-				printInstruction(msg_twist.linear.x, msg_twist.angular.z);
+				printInstruction(msg_twist.twist.linear.x, msg_twist.twist.angular.z);
 			}
 			break;
 		}
@@ -461,24 +472,10 @@ void userInput(std::shared_ptr<rclcpp::Node>& Node)
 	}
 }
 
-void sigintHandler(int sig)
+std::function<void(int)> functionWrapper;
+void sigintHandler(int Signal)
 {
-	// Do some custom action.
-	// For example, publish a stop message to some other nodes.
-	std::cout << "quiting......" << std::endl;
-
-	/* restore the former settings */
-	tcsetattr(STDIN_FILENO, TCSANOW, &old_tio);
-
-	msg_twist.linear.x = 0.0;
-	msg_twist.angular.z = 0.0;
-	pub_twist->publish(msg_twist);
-
-	terminating.store(true);
-	th_handler->join();
- 
-	// All the default sigint handler does is call shutdown()
-	rclcpp::shutdown();
+	functionWrapper(Signal);
 }
 
 int main(int argc, char** argv)
@@ -490,6 +487,31 @@ int main(int argc, char** argv)
 	// Override the default ros sigint handler.
 	// This must be set after the first Node is created.
 	signal(SIGINT, sigintHandler);
+	functionWrapper = [&](int)
+	{
+		// Do some custom action.
+		// For example, publish a stop message to some other nodes.
+		std::cout << "quiting......" << std::endl;
+
+		msg_twist.header.stamp = node->get_clock()->now();
+		msg_twist.twist.linear.x = 0.0;
+		msg_twist.twist.angular.z = 0.0;
+		pub_twist->publish(msg_twist);
+
+		/* restore the former settings */
+		tcsetattr(STDIN_FILENO, TCSANOW, &old_tio);
+
+		terminating.store(true);
+		th_handler->join();
+
+		node.reset();
+
+		// all the default sigint handler does is call shutdown()
+        if (rclcpp::ok())
+        {
+            rclcpp::shutdown();
+        }
+	};
 
 	// params
 	double frequency = 1.0;
@@ -555,7 +577,7 @@ int main(int argc, char** argv)
       		rcStateTopic, 10, subCallbackRcState);
 	}
 
-	pub_twist = node->create_publisher<geometry_msgs::msg::Twist>("cmd_vel_unstamped", 50);
+	pub_twist = node->create_publisher<Twist>("cmd_vel", 50);
 	pub_eng = node->create_publisher<whi_interfaces::msg::WhiEng>("eng", 50);
 	pub_rc_state = node->create_publisher<whi_interfaces::msg::WhiRcState>(rcStateTopic, 50);
 
@@ -566,6 +588,7 @@ int main(int argc, char** argv)
 	{
 		if (!remote_mode.load())
 		{
+			msg_twist.header.stamp = node->get_clock()->now();
 			pub_twist->publish(msg_twist);
 		}
 	};
