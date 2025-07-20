@@ -12,11 +12,11 @@ git clone https://github.com/xinjuezou-whi/whi_interfaces.git
 ## Engineering maintenance keys definition
 | Key | Function                                         |
 |-----|--------------------------------------------------|
-| 0   | neutralize all engineering operations             |
+| 0   | neutralize all engineering operations            |
 | 3   | print the yaw value of IMU                       |
 | 4   | reset the IMU                                    |
-| 5   | print the value of the encoder                       |
-| 6   | reset the value of the encoder                       |
+| 5   | print the value of the encoder                   |
+| 6   | reset the value of the encoder                   |
 | 7   | calibrate the map between reference and PWM duty |
 | 8   | clear calibration results                        |
 
