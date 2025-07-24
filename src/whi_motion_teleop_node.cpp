@@ -33,6 +33,7 @@ Changelog:
 #include <functional>
 
 static const char* VERSION = "02.16.1";
+static std::shared_ptr<rclcpp::Node> node = nullptr;
 static double linear_min = 0.01;
 static double linear_max = 2.5;
 static double angular_min = 0.1;
@@ -40,10 +41,12 @@ static double angular_max = 1.6;
 static double step_linear = 0.01;
 static double step_angular = 0.1;
 static bool cal_initiated = false;
+static rclcpp::Publisher<geometry_msgs::msg::Twist>::SharedPtr pub_twist_unstamped;
 using Twist = geometry_msgs::msg::TwistStamped;
 static rclcpp::Publisher<Twist>::SharedPtr pub_twist;
 static rclcpp::Publisher<whi_interfaces::msg::WhiEng>::SharedPtr pub_eng;
 static rclcpp::Publisher<whi_interfaces::msg::WhiRcState>::SharedPtr pub_rc_state;
+static geometry_msgs::msg::Twist msg_twist_unstamped;
 static Twist msg_twist;
 static whi_interfaces::msg::WhiEng msg_eng;
 static struct termios old_tio;
@@ -53,6 +56,7 @@ static std::atomic_bool remote_mode = false;
 static std::atomic_bool toggle_estop = false;
 static std::atomic_bool toggle_collision = false;
 static bool sw_estopped = false;
+static bool use_stamped_vel = true;
 
 void printInstruction(double Linear, double Angular)
 {
@@ -66,11 +70,21 @@ void printInstruction(double Linear, double Angular)
 
 void subCallbackMotionState(const whi_interfaces::msg::WhiMotionState::SharedPtr MotionState)
 {
+	msg_twist.header.stamp = node->get_clock()->now();
 	if (MotionState->state == whi_interfaces::msg::WhiMotionState::STA_ESTOP)
 	{
 		msg_twist.twist.linear.x = 0.0;
 		msg_twist.twist.angular.z = 0.0;
-		pub_twist->publish(msg_twist);
+		if (pub_twist)
+		{
+			pub_twist->publish(msg_twist);
+		}
+		else
+		{
+			msg_twist_unstamped.linear = msg_twist.twist.linear;
+			msg_twist_unstamped.angular = msg_twist.twist.angular;
+			pub_twist_unstamped->publish(msg_twist_unstamped);
+		}
 
 		if (!toggle_estop.load())
 		{
@@ -88,7 +102,16 @@ void subCallbackMotionState(const whi_interfaces::msg::WhiMotionState::SharedPtr
 	{
 		msg_twist.twist.linear.x = 0.0;
 		msg_twist.twist.angular.z = 0.0;
-		pub_twist->publish(msg_twist);
+		if (pub_twist)
+		{
+			pub_twist->publish(msg_twist);
+		}
+		else
+		{
+			msg_twist_unstamped.linear = msg_twist.twist.linear;
+			msg_twist_unstamped.angular = msg_twist.twist.angular;
+			pub_twist_unstamped->publish(msg_twist_unstamped);
+		}
 
 		if (!toggle_collision.load())
 		{
@@ -114,9 +137,19 @@ void subCallbackRcState(const whi_interfaces::msg::WhiRcState::SharedPtr RcState
 	{
 		if (!remote_mode.load())
 		{
+			msg_twist.header.stamp = node->get_clock()->now();
 			msg_twist.twist.linear.x = 0.0;
 			msg_twist.twist.angular.z = 0.0;
-			pub_twist->publish(msg_twist);
+			if (pub_twist)
+			{
+				pub_twist->publish(msg_twist);
+			}
+			else
+			{
+				msg_twist_unstamped.linear = msg_twist.twist.linear;
+				msg_twist_unstamped.angular = msg_twist.twist.angular;
+				pub_twist_unstamped->publish(msg_twist_unstamped);
+			}
 
 			printf("[warn] control was taken over by remote\n");
 			printf("[cmd] linear %.2f, angular %.2f\n", msg_twist.twist.linear.x, msg_twist.twist.angular.z);
@@ -129,7 +162,7 @@ void subCallbackRcState(const whi_interfaces::msg::WhiRcState::SharedPtr RcState
 	}
 }
 
-void userInput(std::shared_ptr<rclcpp::Node>& Node)
+void userInput()
 {
 	while (!terminating.load())
 	{
@@ -138,22 +171,22 @@ void userInput(std::shared_ptr<rclcpp::Node>& Node)
 		{
 			if (toggle_estop.load() || sw_estopped)
 			{
-				RCLCPP_WARN(Node->get_logger(), "E-Stop detected, command is ignored");
+				RCLCPP_WARN(node->get_logger(), "E-Stop detected, command is ignored");
 				continue;
 			}
 			else if (toggle_collision.load())
 			{
-				RCLCPP_WARN(Node->get_logger(), "collision detected, command is ignored");
+				RCLCPP_WARN(node->get_logger(), "collision detected, command is ignored");
 				continue;
 			}
 			else if (remote_mode.load())
 			{
-				RCLCPP_WARN(Node->get_logger(), "vehicle is in remote control mode, command is ignored");
+				RCLCPP_WARN(node->get_logger(), "vehicle is in remote control mode, command is ignored");
 				continue;
 			}
 		}
 
-		auto currentTime = Node->get_clock()->now();
+		auto currentTime = node->get_clock()->now();
 		msg_twist.header.stamp = currentTime;
 		switch (ch)
 		{
@@ -162,16 +195,25 @@ void userInput(std::shared_ptr<rclcpp::Node>& Node)
 			// stop
 			if (cal_initiated)
 			{
-				RCLCPP_INFO(Node->get_logger(), "please specify direction:");
-				RCLCPP_INFO(Node->get_logger(), "+ counter-clock, - clock");
+				RCLCPP_INFO(node->get_logger(), "please specify direction:");
+				RCLCPP_INFO(node->get_logger(), "+ counter-clock, - clock");
 			}
 			else
 			{
 				msg_twist.twist.linear.x = 0.0;
 				msg_twist.twist.angular.z = 0.0;
-				pub_twist->publish(msg_twist);
+				if (pub_twist)
+				{
+					pub_twist->publish(msg_twist);
+				}
+				else
+				{
+					msg_twist_unstamped.linear = msg_twist.twist.linear;
+					msg_twist_unstamped.angular = msg_twist.twist.angular;
+					pub_twist_unstamped->publish(msg_twist_unstamped);
+				}
 
-				RCLCPP_INFO(Node->get_logger(), "linear %.2f, angular %.2f\n",
+				RCLCPP_INFO(node->get_logger(), "linear %.2f, angular %.2f\n",
 					msg_twist.twist.linear.x, msg_twist.twist.angular.z);
 			}
 			break;
@@ -179,8 +221,8 @@ void userInput(std::shared_ptr<rclcpp::Node>& Node)
 			// left
 			if (cal_initiated)
 			{
-				RCLCPP_INFO(Node->get_logger(), "please specify direction:");
-				RCLCPP_INFO(Node->get_logger(), "+ counter-clock, - clock");
+				RCLCPP_INFO(node->get_logger(), "please specify direction:");
+				RCLCPP_INFO(node->get_logger(), "+ counter-clock, - clock");
 			}
 			else
 			{
@@ -201,9 +243,18 @@ void userInput(std::shared_ptr<rclcpp::Node>& Node)
 				{
 					msg_twist.twist.angular.z = 0.0;
 				}
-				pub_twist->publish(msg_twist);
+				if (pub_twist)
+				{
+					pub_twist->publish(msg_twist);
+				}
+				else
+				{
+					msg_twist_unstamped.linear = msg_twist.twist.linear;
+					msg_twist_unstamped.angular = msg_twist.twist.angular;
+					pub_twist_unstamped->publish(msg_twist_unstamped);
+				}
 
-				RCLCPP_INFO(Node->get_logger(), "linear %.2f, angular %.2f\n",
+				RCLCPP_INFO(node->get_logger(), "linear %.2f, angular %.2f\n",
 					msg_twist.twist.linear.x, msg_twist.twist.angular.z);
 			}
 			break;
@@ -211,8 +262,8 @@ void userInput(std::shared_ptr<rclcpp::Node>& Node)
 			// right
 			if (cal_initiated)
 			{
-				RCLCPP_INFO(Node->get_logger(), "please specify direction:");
-				RCLCPP_INFO(Node->get_logger(), "+ counter-clock, - clock");
+				RCLCPP_INFO(node->get_logger(), "please specify direction:");
+				RCLCPP_INFO(node->get_logger(), "+ counter-clock, - clock");
 			}
 			else
 			{
@@ -233,9 +284,18 @@ void userInput(std::shared_ptr<rclcpp::Node>& Node)
 				{
 					msg_twist.twist.angular.z = 0.0;
 				}
-				pub_twist->publish(msg_twist);
+				if (pub_twist)
+				{
+					pub_twist->publish(msg_twist);
+				}
+				else
+				{
+					msg_twist_unstamped.linear = msg_twist.twist.linear;
+					msg_twist_unstamped.angular = msg_twist.twist.angular;
+					pub_twist_unstamped->publish(msg_twist_unstamped);
+				}
 
-				RCLCPP_INFO(Node->get_logger(), "linear %.2f, angular %.2f\n",
+				RCLCPP_INFO(node->get_logger(), "linear %.2f, angular %.2f\n",
 					msg_twist.twist.linear.x, msg_twist.twist.angular.z);
 			}
 			break;
@@ -243,8 +303,8 @@ void userInput(std::shared_ptr<rclcpp::Node>& Node)
 			// forward
 			if (cal_initiated)
 			{
-				RCLCPP_INFO(Node->get_logger(), "please specify direction:");
-				RCLCPP_INFO(Node->get_logger(), "+ counter-clock, - clock");
+				RCLCPP_INFO(node->get_logger(), "please specify direction:");
+				RCLCPP_INFO(node->get_logger(), "+ counter-clock, - clock");
 			}
 			else
 			{
@@ -265,9 +325,18 @@ void userInput(std::shared_ptr<rclcpp::Node>& Node)
 				{
 					msg_twist.twist.linear.x = 0.0;
 				}
-				pub_twist->publish(msg_twist);
+				if (pub_twist)
+				{
+					pub_twist->publish(msg_twist);
+				}
+				else
+				{
+					msg_twist_unstamped.linear = msg_twist.twist.linear;
+					msg_twist_unstamped.angular = msg_twist.twist.angular;
+					pub_twist_unstamped->publish(msg_twist_unstamped);
+				}
 
-				RCLCPP_INFO(Node->get_logger(), "linear %.2f, angular %.2f\n",
+				RCLCPP_INFO(node->get_logger(), "linear %.2f, angular %.2f\n",
 					msg_twist.twist.linear.x, msg_twist.twist.angular.z);
 			}
 			break;
@@ -275,8 +344,8 @@ void userInput(std::shared_ptr<rclcpp::Node>& Node)
 			// backward
 			if (cal_initiated)
 			{
-				RCLCPP_INFO(Node->get_logger(), "please specify direction:");
-				RCLCPP_INFO(Node->get_logger(), "+ counter-clock, - clock");
+				RCLCPP_INFO(node->get_logger(), "please specify direction:");
+				RCLCPP_INFO(node->get_logger(), "+ counter-clock, - clock");
 			}
 			else
 			{
@@ -297,9 +366,18 @@ void userInput(std::shared_ptr<rclcpp::Node>& Node)
 				{
 					msg_twist.twist.linear.x = 0.0;
 				}
-				pub_twist->publish(msg_twist);
+				if (pub_twist)
+				{
+					pub_twist->publish(msg_twist);
+				}
+				else
+				{
+					msg_twist_unstamped.linear = msg_twist.twist.linear;
+					msg_twist_unstamped.angular = msg_twist.twist.angular;
+					pub_twist_unstamped->publish(msg_twist_unstamped);
+				}
 				
-				RCLCPP_INFO(Node->get_logger(), "linear %.2f, angular %.2f\n",
+				RCLCPP_INFO(node->get_logger(), "linear %.2f, angular %.2f\n",
 					msg_twist.twist.linear.x, msg_twist.twist.angular.z);
 			}
 			break;
@@ -316,25 +394,25 @@ void userInput(std::shared_ptr<rclcpp::Node>& Node)
 			cal_initiated = false;
 			pub_eng->publish(msg_eng);
 
-			RCLCPP_INFO(Node->get_logger(), "eng all neutralized");
+			RCLCPP_INFO(node->get_logger(), "eng all neutralized");
 			break;
 		case 51: // 3: print imu
 			if (cal_initiated)
 			{
-				RCLCPP_INFO(Node->get_logger(), "please specify direction:");
-				RCLCPP_INFO(Node->get_logger(), "+ counter-clock, - clock");
+				RCLCPP_INFO(node->get_logger(), "please specify direction:");
+				RCLCPP_INFO(node->get_logger(), "+ counter-clock, - clock");
 			}
 			else
 			{
 				if (msg_eng.eng_flag & 0b00000100)
 				{
-					RCLCPP_INFO(Node->get_logger(), "print imu off");
+					RCLCPP_INFO(node->get_logger(), "print imu off");
 					msg_eng.eng_flag &= ~0b00000100;
 					msg_eng.eng_flag |= 0b00000001;
 				}
 				else
 				{
-					RCLCPP_INFO(Node->get_logger(), "print imu on");
+					RCLCPP_INFO(node->get_logger(), "print imu on");
 					msg_eng.eng_flag &= ~0b00000001;
 					msg_eng.eng_flag |= 0b00000100;
 				}
@@ -344,8 +422,8 @@ void userInput(std::shared_ptr<rclcpp::Node>& Node)
 		case 52: // 4: reset imu
 			if (cal_initiated)
 			{
-				RCLCPP_INFO(Node->get_logger(), "please specify direction:");
-				RCLCPP_INFO(Node->get_logger(), "+ counter-clock, - clock");
+				RCLCPP_INFO(node->get_logger(), "please specify direction:");
+				RCLCPP_INFO(node->get_logger(), "+ counter-clock, - clock");
 			}
 			else
 			{
@@ -353,26 +431,26 @@ void userInput(std::shared_ptr<rclcpp::Node>& Node)
 				pub_eng->publish(msg_eng);
 				msg_eng.eng_flag &= ~0b00001000;
 
-				RCLCPP_INFO(Node->get_logger(), "reset imu");
+				RCLCPP_INFO(node->get_logger(), "reset imu");
 			}
 			break;
 		case 53: // 5: print enc
 			if (cal_initiated)
 			{
-				RCLCPP_INFO(Node->get_logger(), "please specify direction:");
-				RCLCPP_INFO(Node->get_logger(), "+ counter-clock, - clock");
+				RCLCPP_INFO(node->get_logger(), "please specify direction:");
+				RCLCPP_INFO(node->get_logger(), "+ counter-clock, - clock");
 			}
 			else
 			{
 				if (msg_eng.eng_flag & 0b00010000)
 				{
-					RCLCPP_INFO(Node->get_logger(), "print incoder off");
+					RCLCPP_INFO(node->get_logger(), "print incoder off");
 					msg_eng.eng_flag &= ~0b00010000;
 					msg_eng.eng_flag |= 0b00000010;
 				}
 				else
 				{
-					RCLCPP_INFO(Node->get_logger(), "print incoder on");
+					RCLCPP_INFO(node->get_logger(), "print incoder on");
 					msg_eng.eng_flag &= ~0b00000010;
 					msg_eng.eng_flag |= 0b00010000;
 				}
@@ -382,8 +460,8 @@ void userInput(std::shared_ptr<rclcpp::Node>& Node)
 		case 54: // 6: reset enc
 			if (cal_initiated)
 			{
-				RCLCPP_INFO(Node->get_logger(), "please specify direction:");
-				RCLCPP_INFO(Node->get_logger(), "+ counter-clock, - clock");
+				RCLCPP_INFO(node->get_logger(), "please specify direction:");
+				RCLCPP_INFO(node->get_logger(), "+ counter-clock, - clock");
 			}
 			else
 			{
@@ -391,14 +469,14 @@ void userInput(std::shared_ptr<rclcpp::Node>& Node)
 				pub_eng->publish(msg_eng);
 				msg_eng.eng_flag &= ~0b00100000;
 
-				RCLCPP_INFO(Node->get_logger(), "reset encoder");
+				RCLCPP_INFO(node->get_logger(), "reset encoder");
 			}
 			break;
 		case 55: // 7: build lookup
 			if (cal_initiated)
 			{
-				RCLCPP_INFO(Node->get_logger(), "please specify direction:");
-				RCLCPP_INFO(Node->get_logger(), "+ counter-clock, - clock");
+				RCLCPP_INFO(node->get_logger(), "please specify direction:");
+				RCLCPP_INFO(node->get_logger(), "+ counter-clock, - clock");
 			}
 			else
 			{
@@ -406,14 +484,14 @@ void userInput(std::shared_ptr<rclcpp::Node>& Node)
 				pub_eng->publish(msg_eng);
 				msg_eng.eng_flag &= ~0b01000000;
 
-				RCLCPP_INFO(Node->get_logger(), "build lookup");
+				RCLCPP_INFO(node->get_logger(), "build lookup");
 			}
 			break;
 		case 56: // 8: clear lookup
 			if (cal_initiated)
 			{
-				RCLCPP_INFO(Node->get_logger(), "please specify direction:");
-				RCLCPP_INFO(Node->get_logger(), "+ counter-clock, - clock");
+				RCLCPP_INFO(node->get_logger(), "please specify direction:");
+				RCLCPP_INFO(node->get_logger(), "+ counter-clock, - clock");
 			}
 			else
 			{
@@ -421,14 +499,14 @@ void userInput(std::shared_ptr<rclcpp::Node>& Node)
 				pub_eng->publish(msg_eng);
 				msg_eng.eng_flag &= ~0b10000000;
 
-				RCLCPP_INFO(Node->get_logger(), "clear built lookup");
+				RCLCPP_INFO(node->get_logger(), "clear built lookup");
 			}
 			break;
 		case 57: // 9: diameter compensation calibration
 			cal_initiated = true;
 
-			RCLCPP_INFO(Node->get_logger(), "start diameter compensation calibration, please specify direction:");
-			RCLCPP_INFO(Node->get_logger(), "+ counter-clock, - clock");
+			RCLCPP_INFO(node->get_logger(), "start diameter compensation calibration, please specify direction:");
+			RCLCPP_INFO(node->get_logger(), "+ counter-clock, - clock");
 			break;
 		case 45: // -: clockwise
 			if (cal_initiated)
@@ -439,7 +517,7 @@ void userInput(std::shared_ptr<rclcpp::Node>& Node)
 
 				cal_initiated = false;
 
-				RCLCPP_INFO(Node->get_logger(), "diameter compensation calibration: clockwise");
+				RCLCPP_INFO(node->get_logger(), "diameter compensation calibration: clockwise");
 				break;
 			}
 		case 43: // +: counter-clockwise
@@ -451,18 +529,18 @@ void userInput(std::shared_ptr<rclcpp::Node>& Node)
 
 				cal_initiated = false;
 
-				RCLCPP_INFO(Node->get_logger(), "diameter compensation calibration: counter-clockwise");
+				RCLCPP_INFO(node->get_logger(), "diameter compensation calibration: counter-clockwise");
 				break;
 			}
 		default:
 			if (cal_initiated)
 			{
-				RCLCPP_INFO(Node->get_logger(), "please specify direction:");
-				RCLCPP_INFO(Node->get_logger(), "+ counter-clock, - clock");
+				RCLCPP_INFO(node->get_logger(), "please specify direction:");
+				RCLCPP_INFO(node->get_logger(), "+ counter-clock, - clock");
 			}
 			else
 			{
-				RCLCPP_INFO(Node->get_logger(), "unrecognized command. using following commands");
+				RCLCPP_INFO(node->get_logger(), "unrecognized command. using following commands");
 				printInstruction(msg_twist.twist.linear.x, msg_twist.twist.angular.z);
 			}
 			break;
@@ -482,7 +560,7 @@ int main(int argc, char** argv)
 {
 	rclcpp::init(argc, argv);
 
-	auto node = std::make_shared<rclcpp::Node>("whi_motion_teleop");
+	node = std::make_shared<rclcpp::Node>("whi_motion_teleop");
 
 	// Override the default ros sigint handler.
 	// This must be set after the first Node is created.
@@ -496,7 +574,16 @@ int main(int argc, char** argv)
 		msg_twist.header.stamp = node->get_clock()->now();
 		msg_twist.twist.linear.x = 0.0;
 		msg_twist.twist.angular.z = 0.0;
-		pub_twist->publish(msg_twist);
+		if (pub_twist)
+		{
+			pub_twist->publish(msg_twist);
+		}
+		else
+		{
+			msg_twist_unstamped.linear = msg_twist.twist.linear;
+			msg_twist_unstamped.angular = msg_twist.twist.angular;
+			pub_twist_unstamped->publish(msg_twist_unstamped);
+		}
 
 		/* restore the former settings */
 		tcsetattr(STDIN_FILENO, TCSANOW, &old_tio);
@@ -524,6 +611,8 @@ int main(int argc, char** argv)
 	node->get_parameter("sw_estop_topic", swEstopTopic);
 	node->declare_parameter("rc_state_topic", std::string("rc_state"));
 	node->get_parameter("rc_state_topic", rcStateTopic);
+	node->declare_parameter("use_stamped_vel", use_stamped_vel);
+	node->get_parameter("use_stamped_vel", use_stamped_vel);
 	node->declare_parameter("linear.min", 0.01);
 	node->get_parameter("linear.min", linear_min);
 	node->declare_parameter("linear.max", 2.5);
@@ -577,19 +666,35 @@ int main(int argc, char** argv)
       		rcStateTopic, 10, subCallbackRcState);
 	}
 
-	pub_twist = node->create_publisher<Twist>("cmd_vel", 50);
+	if (use_stamped_vel)
+	{
+		pub_twist = node->create_publisher<Twist>("cmd_vel", 50);
+	}
+	else
+	{
+		pub_twist_unstamped = node->create_publisher<geometry_msgs::msg::Twist>("cmd_vel", 50);
+	}
 	pub_eng = node->create_publisher<whi_interfaces::msg::WhiEng>("eng", 50);
 	pub_rc_state = node->create_publisher<whi_interfaces::msg::WhiRcState>(rcStateTopic, 50);
 
 	// spawn a thread to fresh publication
-	th_handler = std::make_shared<std::thread>(userInput, std::ref(node));
+	th_handler = std::make_shared<std::thread>(userInput);
 
 	auto loopPub = [&]()
 	{
 		if (!remote_mode.load())
 		{
 			msg_twist.header.stamp = node->get_clock()->now();
-			pub_twist->publish(msg_twist);
+			if (pub_twist)
+			{
+				pub_twist->publish(msg_twist);
+			}
+			else
+			{
+				msg_twist_unstamped.linear = msg_twist.twist.linear;
+				msg_twist_unstamped.angular = msg_twist.twist.angular;
+				pub_twist_unstamped->publish(msg_twist_unstamped);
+			}
 		}
 	};
 

@@ -4,6 +4,7 @@ whi_motion_teleop:
     motion_state_topic: NaviBOT/motion_state
     sw_estop_topic: estop
     rc_state_topic: rc_state
+    use_stamped_vel: true
     linear:
       min: 0.08
       max: 0.3
