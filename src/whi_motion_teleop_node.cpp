@@ -32,7 +32,7 @@ Changelog:
 #include <signal.h>
 #include <functional>
 
-static const char* VERSION = "02.16.1";
+static const char* VERSION = "02.16.2";
 static std::shared_ptr<rclcpp::Node> node = nullptr;
 static double linear_min = 0.01;
 static double linear_max = 2.5;
@@ -133,7 +133,7 @@ void subCallbackSwEstop(const std_msgs::msg::Bool::SharedPtr Msg)
 
 void subCallbackRcState(const whi_interfaces::msg::WhiRcState::SharedPtr RcState)
 {
-	if (RcState->state == whi_interfaces::msg::WhiRcState::STA_REMOTE)
+	if (RcState->state == whi_interfaces::msg::WhiRcState::STA_ACTIVE)
 	{
 		if (!remote_mode.load())
 		{
@@ -156,7 +156,7 @@ void subCallbackRcState(const whi_interfaces::msg::WhiRcState::SharedPtr RcState
 		}
 		remote_mode.store(true);
 	}
-	else if (RcState->state == whi_interfaces::msg::WhiRcState::STA_AUTO)
+	else if (RcState->state == whi_interfaces::msg::WhiRcState::STA_INACTIVE)
 	{
 		remote_mode.store(false);
 	}
